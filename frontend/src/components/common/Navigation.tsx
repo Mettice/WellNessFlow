@@ -7,11 +7,13 @@ import {
   BuildingOfficeIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
+  MoonIcon,
+  SunIcon,
 } from '@heroicons/react/24/outline';
 
 export const Navigation: React.FC = () => {
   const { user, logout } = useAuth();
-  const { theme } = useTheme();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
   const isActive = (path: string) => location.pathname.startsWith(path);
@@ -74,6 +76,21 @@ export const Navigation: React.FC = () => {
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
             <div className="ml-3 relative">
               <div className="flex items-center space-x-4">
+                <button
+                  onClick={toggleTheme}
+                  className={`p-2 rounded-md ${
+                    theme === 'dark'
+                      ? 'text-gray-400 hover:text-white'
+                      : 'text-gray-500 hover:text-gray-700'
+                  } focus:outline-none transition-colors`}
+                  aria-label="Toggle theme"
+                >
+                  {theme === 'dark' ? (
+                    <SunIcon className="h-5 w-5" />
+                  ) : (
+                    <MoonIcon className="h-5 w-5" />
+                  )}
+                </button>
                 <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                   {user?.email}
                 </span>

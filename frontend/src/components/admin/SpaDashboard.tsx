@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { useTheme } from '../../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useToast } from '../../contexts/ToastContext';
 
 interface DailyMetrics {
   total_appointments: number;
@@ -20,8 +20,8 @@ interface Appointment {
 
 export const SpaDashboard: React.FC = () => {
   const { user } = useAuth();
-  const { theme } = useTheme();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [metrics, setMetrics] = useState<DailyMetrics | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,9 +45,14 @@ export const SpaDashboard: React.FC = () => {
 
       setMetrics(metricsRes.data);
       setAppointments(appointmentsRes.data);
+      setError(null);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError('Failed to load dashboard data');
+      showToast({ 
+        title: 'Failed to load dashboard data. Please try again.',
+        type: 'error'
+      });
     } finally {
       setLoading(false);
     }
@@ -215,4 +220,6 @@ export const SpaDashboard: React.FC = () => {
       </div>
     </div>
   );
-}; 
+};
+
+export default SpaDashboard; 

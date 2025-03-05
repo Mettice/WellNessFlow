@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface CalendarIntegrationProps {
   onSuccess?: () => void;
-  theme: string;
   isOnboarding?: boolean;
 }
 
@@ -63,7 +63,8 @@ const CALENDAR_TYPES = [
   }
 ];
 
-const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, theme, isOnboarding = false }) => {
+const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, isOnboarding = false }) => {
+  const { theme } = useTheme();
   const [isConnecting, setIsConnecting] = useState(false);
   const [selectedCalendar, setSelectedCalendar] = useState<string>('');
   const [calendarConfig, setCalendarConfig] = useState<CalendarConfig>({

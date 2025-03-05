@@ -4,9 +4,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from .chatbot.openai_api import generate_response, get_spa_context
 from .rag.document_loader import process_document
 from .chatbot.calendar import CalendarIntegration
+from .services.mock_calendar import MockCalendarService
 from datetime import datetime, timedelta
 import stripe
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from models.database import SessionLocal, Appointment, Client, User, SubscriptionPlan, SpaService, Location, Document, DocumentChunk, SpaProfile, BrandSettings, PlatformMetrics, PlatformSettings
 import os
 import uuid
@@ -21,6 +22,7 @@ from werkzeug.utils import secure_filename
 from .utils import allowed_file
 import json
 from functools import wraps
+import traceback
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -551,65 +553,86 @@ def get_bot_metrics():
             days = int(request.args.get('days', 30))
             start_date = datetime.now() - timedelta(days=days)
             
-            # Get total conversations and bookings for this spa
+            # Get total conversations (all appointments)
             total_conversations = db.query(func.count(Appointment.id)).filter(
-                Appointment.spa_id == spa_id
+                Appointment.spa_id == spa_id,
+                Appointment.created_at >= start_date
             ).scalar() or 0
             
+            # Get successful bookings (confirmed appointments)
             successful_bookings = db.query(func.count(Appointment.id)).filter(
                 Appointment.spa_id == spa_id,
-                Appointment.status == 'confirmed'
+                Appointment.status == 'confirmed',
+                Appointment.created_at >= start_date
             ).scalar() or 0
             
-            # Calculate conversion rate
+            # Calculate conversion rate safely
             conversion_rate = (successful_bookings / total_conversations * 100) if total_conversations > 0 else 0
             
-            # Get popular services with names for this spa
-            popular_services = db.query(
+            # Get popular services with proper null handling
+            popular_services = []
+            services_query = db.query(
                 SpaService.name,
                 func.count(Appointment.id).label('booking_count')
-            ).join(
+            ).outerjoin(
                 Appointment,
-                Appointment.service_id == SpaService.id
+                and_(
+                    Appointment.service_id == SpaService.id,
+                    Appointment.spa_id == spa_id,
+                    Appointment.created_at >= start_date
+                )
             ).filter(
-                Appointment.spa_id == spa_id
+                SpaService.spa_id == spa_id
             ).group_by(
                 SpaService.name
             ).order_by(
                 func.count(Appointment.id).desc()
             ).limit(5).all()
             
-            # Get peak booking hours for this spa
-            peak_hours = db.query(
+            popular_services = [
+                {'service': service_name, 'count': count}
+                for service_name, count in services_query
+            ]
+            
+            # Get peak booking hours with proper null handling
+            peak_hours = []
+            hours_query = db.query(
                 func.strftime('%H', Appointment.datetime).label('hour'),
                 func.count(Appointment.id).label('booking_count')
             ).filter(
+                Appointment.spa_id == spa_id,
                 Appointment.created_at >= start_date
-            ).scalar()
+            ).group_by(
+                func.strftime('%H', Appointment.datetime)
+            ).order_by(
+                func.count(Appointment.id).desc()
+            ).all()
             
-            # Calculate average response time
+            peak_hours = [
+                {'hour': hour or '00', 'bookings': count}
+                for hour, count in hours_query
+            ]
+            
+            # Calculate average response time with safe default
             avg_response_time = db.query(
-                func.avg(Appointment.created_at - func.datetime(Appointment.datetime))
+                func.avg(
+                    func.julianday(Appointment.created_at) - 
+                    func.julianday(Appointment.datetime)
+                ) * 24 * 60  # Convert to minutes
             ).filter(
                 Appointment.spa_id == spa_id,
                 Appointment.created_at >= start_date
-            ).scalar()
+            ).scalar() or 0
             
-            avg_response_time_str = f"{round(avg_response_time or 0, 1)}s"
+            avg_response_time_str = f"{round(avg_response_time, 1)} min"
             
             return jsonify({
                 'totalConversations': total_conversations,
                 'successfulBookings': successful_bookings,
                 'averageResponseTime': avg_response_time_str,
                 'conversionRate': round(conversion_rate, 1),
-                'popularServices': [
-                    {'service': service_name, 'count': count}
-                    for service_name, count in popular_services
-                ],
-                'peakHours': [
-                    {'hour': hour, 'bookings': count}
-                    for hour, count in peak_hours
-                ]
+                'popularServices': popular_services or [],
+                'peakHours': peak_hours or []
             })
             
         finally:
@@ -617,7 +640,15 @@ def get_bot_metrics():
             
     except Exception as e:
         print(f"Error in get_bot_metrics: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Full traceback: {traceback.format_exc()}")
+        return jsonify({
+            'totalConversations': 0,
+            'successfulBookings': 0,
+            'averageResponseTime': '0 min',
+            'conversionRate': 0,
+            'popularServices': [],
+            'peakHours': []
+        }), 200  # Return empty metrics instead of 500 error
 
 @bp.route('/payment/process', methods=['POST'])
 def process_payment():
@@ -1693,33 +1724,30 @@ def get_public_branding():
         })
 
 @bp.route('/public/chat', methods=['POST'])
-async def public_chat():
-    """Public chat endpoint that doesn't require authentication"""
+def public_chat():
+    """Public endpoint for chat - no authentication required"""
     try:
         data = request.json
         message = data.get('message')
-        spa_id = data.get('spa_id', 'default')
         conversation_history = data.get('conversation_history', [])
-        
+
         if not message:
             return jsonify({'error': 'Message is required'}), 400
-            
-        # Get spa context
-        context = get_spa_context(spa_id)
-        
+
         # Generate response using OpenAI
-        response = await generate_response(
+        response = generate_response(
             message=message,
-            spa_id=spa_id,
-            conversation_history=conversation_history,
-            context=context
+            conversation_history=conversation_history
         )
-        
-        return jsonify(response)
-        
+
+        return jsonify({
+            'response': response,
+            'intent': 'booking' if any(word in message.lower() for word in ['book', 'appointment', 'schedule']) else 'general'
+        })
+
     except Exception as e:
         print(f"Error in public chat: {str(e)}")
-        return jsonify({'error': 'Failed to process message'}), 500
+        return jsonify({'error': 'Failed to process chat message'}), 500
 
 @bp.route('/admin/business-profile', methods=['GET'])
 @jwt_required()
@@ -2318,3 +2346,85 @@ def toggle_widget():
         return jsonify({'error': 'Failed to update widget status'}), 500
     finally:
         db.close() 
+
+# Mock Calendar Routes for Testing
+@bp.route('/mock/appointments/available', methods=['GET'])
+def get_mock_available_slots():
+    """Get available slots from mock calendar for testing"""
+    date_str = request.args.get('date')
+    duration = request.args.get('duration', 60, type=int)
+    therapist_id = request.args.get('therapist_id')
+    
+    if not date_str:
+        return jsonify({'error': 'Date is required'}), 400
+        
+    try:
+        date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        mock_calendar = MockCalendarService()
+        slots = mock_calendar.get_available_slots(date, duration, therapist_id)
+        return jsonify({'slots': slots})
+    except ValueError:
+        return jsonify({'error': 'Invalid date format'}), 400
+    except Exception as e:
+        print(f"Error getting mock slots: {str(e)}")
+        return jsonify({'error': 'Failed to get available slots'}), 500
+
+@bp.route('/mock/appointments', methods=['POST'])
+def create_mock_appointment():
+    """Create a mock appointment for testing"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    # Validate required fields
+    required_fields = {
+        'start_time': str,
+        'duration': int,
+        'customer_info': dict,
+        'service_info': dict
+    }
+
+    for field, field_type in required_fields.items():
+        if field not in data:
+            return jsonify({'error': f'Missing required field: {field}'}), 400
+        if not isinstance(data[field], field_type):
+            return jsonify({'error': f'Invalid type for field: {field}'}), 400
+
+    # Validate customer information
+    required_customer_info = ['name', 'email', 'phone']
+    for field in required_customer_info:
+        if field not in data['customer_info']:
+            return jsonify({'error': f'Missing required customer information: {field}'}), 400
+        if not data['customer_info'][field]:
+            return jsonify({'error': f'Customer {field} cannot be empty'}), 400
+
+    try:
+        start_time = datetime.fromisoformat(data['start_time'].replace('Z', '+00:00'))
+        
+        mock_calendar = MockCalendarService()
+        appointment = mock_calendar.create_appointment(
+            start_time=start_time,
+            duration=data['duration'],
+            customer_info=data['customer_info'],
+            service_info=data['service_info']
+        )
+        
+        return jsonify(appointment), 201
+        
+    except ValueError as e:
+        return jsonify({'error': f'Invalid datetime format: {str(e)}'}), 400
+    except Exception as e:
+        print(f"Error creating mock appointment: {str(e)}")
+        return jsonify({'error': 'Failed to create appointment'}), 500
+
+@bp.route('/mock/appointments/<int:appointment_id>', methods=['DELETE'])
+def cancel_mock_appointment(appointment_id):
+    """Cancel a mock appointment for testing"""
+    try:
+        mock_calendar = MockCalendarService()
+        if mock_calendar.cancel_appointment(appointment_id):
+            return jsonify({'message': 'Appointment cancelled successfully'}), 200
+        return jsonify({'error': 'Appointment not found'}), 404
+    except Exception as e:
+        print(f"Error cancelling mock appointment: {str(e)}")
+        return jsonify({'error': 'Failed to cancel appointment'}), 500

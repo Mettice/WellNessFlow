@@ -107,6 +107,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
   });
   const [isTyping, setIsTyping] = useState(false);
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -465,221 +467,291 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     );
   };
 
+  // Auto-open chat after delay
+  useEffect(() => {
+    if (!hasInteracted) {
+      const timer = setTimeout(() => {
+        setIsOpen(true);
+        setHasInteracted(true);
+      }, 10000); // 10 seconds delay
+
+      return () => clearTimeout(timer);
+    }
+  }, [hasInteracted]);
+
+  // Track user interaction
+  useEffect(() => {
+    const handleInteraction = () => setHasInteracted(true);
+    window.addEventListener('click', handleInteraction);
+    window.addEventListener('scroll', handleInteraction);
+    
+    return () => {
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('scroll', handleInteraction);
+    };
+  }, []);
+
   return (
     <div 
-      className={`h-full ${
-        style === 'floating' ? 'shadow-lg' : ''
-      } ${
-        position === 'center' 
-          ? 'mx-auto'
-          : position === 'right'
-          ? 'ml-auto'
-          : ''
-      }`}
-      style={{
-        maxWidth: ratio === '16:9' ? '640px' : ratio === '4:3' ? '480px' : '400px',
-        width: '100%'
-      }}
+      className={`fixed bottom-4 ${position === 'right' ? 'right-4' : position === 'left' ? 'left-4' : 'left-1/2 transform -translate-x-1/2'} z-50`}
     >
-      <div className={`flex flex-col h-full ${theme === 'dark' ? 'bg-dark-500' : 'bg-white'}`}>
-        {/* Header */}
+      {isOpen ? (
         <div 
-          className="p-4 rounded-t-lg flex items-center space-x-3"
-          style={{ 
-            backgroundColor: theme === 'dark' ? branding.primary_color : branding.secondary_color,
-            color: theme === 'dark' ? '#fff' : '#000'
+          className={`${
+            style === 'floating' ? 'shadow-lg' : ''
+          } rounded-lg flex flex-col animate-fade-in h-[500px]`}
+          style={{
+            maxWidth: ratio === '16:9' ? '640px' : ratio === '4:3' ? '480px' : '400px',
+            width: '100%',
+            backgroundColor: theme === 'dark' ? '#1a1a1a' : '#ffffff'
           }}
         >
-          {branding.logo_url && (
-            <img 
-              src={branding.logo_url} 
-              alt="Spa logo" 
-              className="h-8 w-8 object-contain rounded"
-              onError={(e) => {
-                // Hide the image if it fails to load
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          )}
-          <h2 className="text-lg font-semibold">Spa Assistant</h2>
-        </div>
-
-        {/* Messages */}
-        <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${
-          theme === 'dark' 
-            ? 'bg-gray-900/50' 
-            : 'bg-white/50'
-        }`}>
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`chat-message ${message.isUser ? 'user-message' : 'bot-message'}`}
-            >
-              <div>{formatMessage(message)}</div>
-              <span className={`text-xs ${
-                theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-              } mt-1 block`}>
-                {message.timestamp.toLocaleTimeString()}
-              </span>
-            </div>
-          ))}
-
-          {/* Service Selection */}
-          {availableServices.length > 0 && !bookingState.selectedService && (
-            <div className="space-y-2">
-              {availableServices.map((service) => (
-                <button
-                  key={service.id}
-                  onClick={() => handleServiceSelect(service)}
-                  className="w-full p-4 text-left bg-white border rounded-lg hover:bg-gray-50"
-                >
-                  <h3 className="font-semibold">{service.name}</h3>
-                  <p className="text-sm text-gray-600">{service.description}</p>
-                  <div className="mt-2 text-sm text-gray-500">
-                    <span>{service.duration} minutes</span>
-                    <span className="mx-2">•</span>
-                    <span>${service.price}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {availableLocations.length > 0 && bookingState.selectedService && !bookingState.selectedLocation && (
-            <div className="space-y-2">
-              {availableLocations.map((location) => (
-                <button
-                  key={location.id}
-                  onClick={() => handleLocationSelect(location)}
-                  className="w-full p-4 text-left bg-white border rounded-lg hover:bg-gray-50"
-                >
-                  <h3 className="font-semibold">{location.name}</h3>
-                  <p className="text-sm text-gray-600">{location.address}</p>
-                  <p className="text-sm text-gray-600">{location.city}, {location.state}</p>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {isTyping && (
-            <div className="chat-message bot-message">
-              <div className="flex space-x-2">
-                <div className="w-2 h-2 rounded-full animate-bounce bg-gray-400" />
-                <div className="w-2 h-2 rounded-full animate-bounce delay-100 bg-gray-400" />
-                <div className="w-2 h-2 rounded-full animate-bounce delay-200 bg-gray-400" />
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Calendar Modal */}
-        {showCalendar && (
-          <div className="absolute bottom-full right-0 mb-4 bg-white rounded-lg shadow-xl p-4">
-            {!bookingState.showForm ? (
-              <div className="space-y-4">
-                {bookingState.selectedService && (
-                  <div className="mb-4 p-4 bg-primary-50 rounded-lg">
-                    <h3 className="font-semibold">{bookingState.selectedService.name}</h3>
-                    <p className="text-sm text-gray-600">
-                      Duration: {bookingState.selectedService.duration} minutes
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Price: ${bookingState.selectedService.price}
-                    </p>
-                  </div>
-                )}
-                
-                <Calendar
-                  onChange={handleDateSelect}
-                  value={selectedDate}
-                  minDate={new Date()}
+          {/* Header */}
+          <div 
+            className="p-4 rounded-t-lg flex items-center justify-between"
+            style={{ 
+              backgroundColor: theme === 'dark' ? branding.primary_color : branding.secondary_color,
+              color: theme === 'dark' ? '#fff' : '#000'
+            }}
+          >
+            <div className="flex items-center space-x-3">
+              {branding.logo_url && (
+                <img 
+                  src={branding.logo_url} 
+                  alt="Spa logo" 
+                  className="h-8 w-8 object-contain rounded"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
                 />
-                
-                {bookingState.isLoading && (
-                  <div className="flex justify-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
-                  </div>
-                )}
-
-                {bookingState.error && (
-                  <div className="text-red-500 text-sm p-2 bg-red-50 rounded">
-                    {bookingState.error}
-                  </div>
-                )}
-
-                {selectedDate && availableSlots.length > 0 && (
-                  <div className="mt-4">
-                    <h3 className="font-semibold mb-2">Available Slots:</h3>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {availableSlots.map((slot, index) => (
-                        <button
-                          key={index}
-                          onClick={() => handleSlotSelect(slot)}
-                          className="w-full p-2 text-left hover:bg-gray-100 rounded flex justify-between items-center"
-                        >
-                          <span>{slot.time} - {slot.service}</span>
-                          <span className="text-sm text-gray-500">
-                            {slot.duration} min
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {selectedDate && availableSlots.length === 0 && !bookingState.isLoading && (
-                  <div className="text-center text-gray-500 mt-4">
-                    No available slots for this date
-                  </div>
-                )}
+              )}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-xs">Online</span>
+                </div>
+                <h2 className="text-lg font-semibold">Spa Assistant</h2>
               </div>
-            ) : (
-              <div className="w-80">
-                <h3 className="font-semibold mb-4">Complete Your Booking</h3>
-                {bookingState.error && (
-                  <div className="text-red-500 text-sm p-2 bg-red-50 rounded mb-4">
-                    {bookingState.error}
-                  </div>
-                )}
-                <ClientForm
-                  onSubmit={handleClientFormSubmit}
-                  onCancel={handleClientFormCancel}
-                  isLoading={bookingState.isLoading}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Input */}
-        <div className={`p-4 border-t ${
-          theme === 'dark' 
-            ? 'border-gray-700 bg-gray-900/95' 
-            : 'border-gray-200 bg-white/95'
-        }`}>
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Type your message..."
-              className="chat-input"
-            />
-            <button
-              onClick={() => handleSendMessage()}
-              disabled={isLoading}
-              className="send-button disabled:opacity-50"
-              aria-label="Send message"
+            </div>
+            <button 
+              onClick={() => setIsOpen(false)}
+              className="text-current hover:opacity-75"
             >
-              <PaperAirplaneIcon className="h-5 w-5" />
+              ✕
             </button>
           </div>
+
+          {/* Messages */}
+          <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${
+            theme === 'dark' 
+              ? 'bg-gray-900/50' 
+              : 'bg-white/50'
+          }`}>
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`chat-message ${message.isUser ? 'user-message' : 'bot-message'}`}
+              >
+                <div>{formatMessage(message)}</div>
+                <span className={`text-xs ${
+                  theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                } mt-1 block`}>
+                  {message.timestamp.toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+
+            {/* Service Selection */}
+            {availableServices.length > 0 && !bookingState.selectedService && (
+              <div className="space-y-2">
+                {availableServices.map((service) => (
+                  <button
+                    key={service.id}
+                    onClick={() => handleServiceSelect(service)}
+                    className="w-full p-4 text-left bg-white border rounded-lg hover:bg-gray-50"
+                  >
+                    <h3 className="font-semibold">{service.name}</h3>
+                    <p className="text-sm text-gray-600">{service.description}</p>
+                    <div className="mt-2 text-sm text-gray-500">
+                      <span>{service.duration} minutes</span>
+                      <span className="mx-2">•</span>
+                      <span>${service.price}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {availableLocations.length > 0 && bookingState.selectedService && !bookingState.selectedLocation && (
+              <div className="space-y-2">
+                {availableLocations.map((location) => (
+                  <button
+                    key={location.id}
+                    onClick={() => handleLocationSelect(location)}
+                    className="w-full p-4 text-left bg-white border rounded-lg hover:bg-gray-50"
+                  >
+                    <h3 className="font-semibold">{location.name}</h3>
+                    <p className="text-sm text-gray-600">{location.address}</p>
+                    <p className="text-sm text-gray-600">{location.city}, {location.state}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {isTyping && (
+              <div className="chat-message bot-message">
+                <div className="flex space-x-2">
+                  <div className="w-2 h-2 rounded-full animate-bounce bg-gray-400" />
+                  <div className="w-2 h-2 rounded-full animate-bounce delay-100 bg-gray-400" />
+                  <div className="w-2 h-2 rounded-full animate-bounce delay-200 bg-gray-400" />
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Calendar Modal */}
+          {showCalendar && (
+            <div className="absolute bottom-full right-0 mb-4 bg-white rounded-lg shadow-xl p-4">
+              {!bookingState.showForm ? (
+                <div className="space-y-4">
+                  {bookingState.selectedService && (
+                    <div className="mb-4 p-4 bg-primary-50 rounded-lg">
+                      <h3 className="font-semibold">{bookingState.selectedService.name}</h3>
+                      <p className="text-sm text-gray-600">
+                        Duration: {bookingState.selectedService.duration} minutes
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Price: ${bookingState.selectedService.price}
+                      </p>
+                    </div>
+                  )}
+                  
+                  <Calendar
+                    onChange={handleDateSelect}
+                    value={selectedDate}
+                    minDate={new Date()}
+                  />
+                  
+                  {bookingState.isLoading && (
+                    <div className="flex justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                    </div>
+                  )}
+
+                  {bookingState.error && (
+                    <div className="text-red-500 text-sm p-2 bg-red-50 rounded">
+                      {bookingState.error}
+                    </div>
+                  )}
+
+                  {selectedDate && availableSlots.length > 0 && (
+                    <div className="mt-4">
+                      <h3 className="font-semibold mb-2">Available Slots:</h3>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {availableSlots.map((slot, index) => (
+                          <button
+                            key={index}
+                            onClick={() => handleSlotSelect(slot)}
+                            className="w-full p-2 text-left hover:bg-gray-100 rounded flex justify-between items-center"
+                          >
+                            <span>{slot.time} - {slot.service}</span>
+                            <span className="text-sm text-gray-500">
+                              {slot.duration} min
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedDate && availableSlots.length === 0 && !bookingState.isLoading && (
+                    <div className="text-center text-gray-500 mt-4">
+                      No available slots for this date
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="w-80">
+                  <h3 className="font-semibold mb-4">Complete Your Booking</h3>
+                  {bookingState.error && (
+                    <div className="text-red-500 text-sm p-2 bg-red-50 rounded mb-4">
+                      {bookingState.error}
+                    </div>
+                  )}
+                  <ClientForm
+                    onSubmit={handleClientFormSubmit}
+                    onCancel={handleClientFormCancel}
+                    isLoading={bookingState.isLoading}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Input */}
+          <div className={`p-4 border-t ${
+            theme === 'dark' 
+              ? 'border-gray-700 bg-gray-900/95' 
+              : 'border-gray-200 bg-white/95'
+          }`}>
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                placeholder="Type your message..."
+                className="chat-input"
+              />
+              <button
+                onClick={() => handleSendMessage()}
+                disabled={isLoading}
+                className="send-button disabled:opacity-50"
+                aria-label="Send message"
+              >
+                <PaperAirplaneIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <button
+          onClick={() => {
+            setIsOpen(true);
+            setHasInteracted(true);
+          }}
+          className="bg-primary-500 text-white rounded-full p-4 shadow-lg hover:bg-primary-600 animate-bounce-gentle relative"
+          style={{ backgroundColor: branding.primary_color }}
+        >
+          <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-green-400 animate-pulse" />
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 };
+
+// Add keyframe animations
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes bounce-gentle {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+  .animate-bounce-gentle {
+    animation: bounce-gentle 2s infinite ease-in-out;
+  }
+`;
+document.head.appendChild(style);
 
 export default ChatWidget; 

@@ -100,4 +100,71 @@ def send_cancellation_notification(appointment):
                 'message': f"Hi {appointment.client_name}, your appointment at Serenity Spa for {appointment.datetime.strftime('%B %d at %I:%M %p')} has been cancelled. Please call us to reschedule."
             })
     except Exception as e:
-        print(f"Error sending cancellation SMS: {e}") 
+        print(f"Error sending cancellation SMS: {e}")
+
+@webhook_bp.route('/facebook', methods=['GET', 'POST'])
+def facebook_webhook():
+    if request.method == 'GET':
+        # Handle webhook verification from Facebook
+        verify_token = request.args.get('hub.verify_token')
+        if verify_token == os.getenv('FACEBOOK_VERIFY_TOKEN'):
+            return request.args.get('hub.challenge')
+        return 'Invalid verification token', 403
+
+    # Handle incoming messages
+    try:
+        data = request.json
+        
+        # Verify the request is from Facebook
+        signature = request.headers.get('X-Hub-Signature-256')
+        if not verify_facebook_signature(request.get_data(), signature):
+            return jsonify({'error': 'Invalid signature'}), 401
+
+        # Process each entry/message
+        for entry in data['entry']:
+            for messaging in entry['messaging']:
+                sender_id = messaging['sender']['id']
+                if 'message' in messaging:
+                    message_text = messaging.get('message', {}).get('text')
+                    if message_text:
+                        # Process message using existing chatbot logic
+                        response = generate_response(
+                            message=message_text,
+                            conversation_history=[]  # You might want to fetch history for this user
+                        )
+                        
+                        # Send response back to Facebook
+                        send_facebook_message(sender_id, response)
+
+        return 'OK', 200
+    except Exception as e:
+        print(f"Error handling Facebook message: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def verify_facebook_signature(payload: bytes, signature_header: str) -> bool:
+    """Verify that the webhook request came from Facebook."""
+    if not signature_header:
+        return False
+    
+    expected_signature = 'sha256=' + hmac.new(
+        os.getenv('FACEBOOK_APP_SECRET').encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(signature_header, expected_signature)
+
+def send_facebook_message(recipient_id: str, message_text: str):
+    """Send message back to Facebook Messenger"""
+    try:
+        url = f"https://graph.facebook.com/v18.0/me/messages"
+        payload = {
+            'recipient': {'id': recipient_id},
+            'message': {'text': message_text}
+        }
+        params = {'access_token': os.getenv('FACEBOOK_PAGE_ACCESS_TOKEN')}
+        
+        response = requests.post(url, json=payload, params=params)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"Error sending message to Facebook: {e}") 

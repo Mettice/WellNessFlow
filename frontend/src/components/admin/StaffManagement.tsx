@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface StaffMember {
   id: number;
@@ -11,11 +12,8 @@ interface StaffMember {
   created_at: string;
 }
 
-interface StaffManagementProps {
-  theme: string;
-}
-
-const StaffManagement: React.FC<StaffManagementProps> = ({ theme }) => {
+const StaffManagement: React.FC = () => {
+  const { theme } = useTheme();
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);

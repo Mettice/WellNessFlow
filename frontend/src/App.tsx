@@ -104,7 +104,7 @@ const AppContent: React.FC = () => {
           path="/settings"
           element={
             <ProtectedRoute>
-              <Settings theme="dark" />
+              <Settings />
             </ProtectedRoute>
           }
         />

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../hooks/useAuth';
+import { useTheme } from '../../contexts/ThemeContext';
 import BrandSettings from './BrandSettings';
 import { useSearchParams } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
 
 interface BusinessProfile {
   businessName: string;
@@ -48,7 +49,8 @@ interface HistoryEntry {
   timestamp: number;
 }
 
-const Settings: React.FC<{ theme: string }> = ({ theme }) => {
+const Settings: React.FC = () => {
+  const { theme } = useTheme();
   const { user } = useAuth();
   const { showToast } = useToast();
   const [searchParams] = useSearchParams();

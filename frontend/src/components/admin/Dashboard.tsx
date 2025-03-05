@@ -7,7 +7,6 @@ import Settings from './Settings';
 import CalendarIntegration from './CalendarIntegration';
 import WidgetGenerator from './WidgetGenerator';
 import StaffManagement from './StaffManagement';
-import { useAuth } from '../../hooks/useAuth';
 
 // Define types
 interface NavItem {
@@ -538,13 +537,13 @@ const Dashboard: React.FC = () => {
       case 'Documents':
         return renderDocumentsSection();
       case 'Calendar':
-        return <CalendarIntegration theme={theme} />;
+        return <CalendarIntegration />;
       case 'Staff':
-        return <StaffManagement theme={theme} />;
+        return <StaffManagement />;
       case 'Widget':
         return <WidgetGenerator theme={theme} spaId="default" />;
       case 'Settings':
-        return <Settings theme={theme} />;
+        return <Settings />;
       default:
         return renderOverviewSection();
     }

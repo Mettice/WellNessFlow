@@ -8,6 +8,8 @@ import numpy as np
 from ..rag.embeddings import generate_embeddings
 import traceback
 from ..services.upsell_service import UpsellService
+import openai
+from flask import current_app
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
@@ -164,175 +166,47 @@ def detect_intent(message: str) -> str:
     )
     return response.choices[0].message.content.strip()
 
-async def generate_response(
-    message: str, 
-    spa_id: Optional[str] = None, 
-    conversation_history: Optional[list] = None
-) -> Dict:
-    print("\n=== Generating Response ===")
-    print(f"Message: {message}")
-    print(f"Spa ID: {spa_id}")
-    
+def generate_response(message: str, conversation_history: Optional[list] = None) -> str:
+    """Generate a response using OpenAI's API"""
     try:
-        # Get spa context and detect intent
-        spa_context = get_spa_context(spa_id)
-        intent = detect_intent(message)
-        print(f"Detected intent: {intent}")
+        # Format conversation history
+        messages = []
         
-        # Initialize upsell service with spa_id
-        upsell_service = UpsellService(spa_id=spa_id)
-        
-        # Get relevant context based on intent
-        relevant_context = ""
-        if spa_id:
-            context_by_type = get_relevant_context(message, spa_id)
-            
-            # Collect relevant documents based on intent
-            relevant_docs = []
-            if intent == "PRICING":
-                relevant_docs.extend(context_by_type['pricing'])
-                relevant_docs.extend(context_by_type['general'])
-            elif intent == "BOOKING":
-                relevant_docs.extend(context_by_type['booking'])
-                relevant_docs.extend(context_by_type['service'])
-                relevant_docs.extend(context_by_type['general'])
-                
-                # For booking intent, check if we should suggest upsells
-                service_type = await extract_service_type(message, conversation_history)
-                if service_type:
-                    upsell_options = await upsell_service.get_personalized_upsell(
-                        service_type=service_type,
-                        customer_history=conversation_history
-                    )
-                    if upsell_options:
-                        upsell_suggestion = upsell_service.format_upsell_message(
-                            service_type,
-                            upsell_options[0]  # Use the top suggestion
-                        )
-                        relevant_context += f"\n\nSuggested Upsell: {upsell_suggestion}"
-                
-            elif intent == "INFORMATION":
-                relevant_docs.extend(context_by_type['service'])
-                relevant_docs.extend(context_by_type['staff'])
-                relevant_docs.extend(context_by_type['general'])
-            else:
-                relevant_docs.extend(context_by_type['general'])
-            
-            # Format context from documents
-            if relevant_docs:
-                context_texts = []
-                for doc in relevant_docs:
-                    if isinstance(doc, dict):  # New format with metadata
-                        context_texts.append(f"From {doc['source']}: {doc['content']}")
-                    else:  # Old format (string only)
-                        context_texts.append(doc)
-                relevant_context = "\n\n".join(context_texts)
-                print(f"Found {len(relevant_docs)} relevant documents")
-            else:
-                print("No relevant documents found")
-        
-        # Initialize response dict
-        response_data = {
-            "message": "",
-            "intent": intent,
-            "actions": []
-        }
-        
-        # Build conversation context
-        conversation_context = []
+        # Add system message
+        messages.append({
+            "role": "system",
+            "content": """You are a friendly and knowledgeable spa assistant. You help customers learn about spa services 
+            and book appointments. Be concise, professional, and helpful. If someone wants to book, ask about their 
+            preferred service and time."""
+        })
+
+        # Add conversation history
         if conversation_history:
-            for msg in conversation_history[-5:]:  # Only use last 5 messages
-                role = "user" if msg.get('isUser') else "assistant"
-                conversation_context.append({
-                    "role": role,
+            for msg in conversation_history:
+                messages.append({
+                    "role": msg.get('role', 'user'),
                     "content": msg.get('content', '')
                 })
-        
-        # Add current message
-        conversation_context.append({
+
+        # Add the current message
+        messages.append({
             "role": "user",
             "content": message
         })
-        
-        # Create system message with context
-        system_message = f"""You are a friendly and knowledgeable spa assistant. Your goal is to provide a warm, personalized experience while helping clients discover the perfect spa services for their needs.
 
-Spa Information:
-{spa_context}
-
-Relevant Document Context:
-{relevant_context}
-
-Response Formatting Guidelines:
-1. Structure your responses clearly using sections when appropriate:
-   • Use bullet points (•) for lists
-   • Break paragraphs for readability
-   • Highlight important information using **bold**
-   • Use emojis sparingly for visual appeal (✨, 💆‍♀️, 🌿)
-
-2. When discussing services:
-   • Name: **[Service Name]**
-   • Duration: [Time] minutes
-   • Price: $[Amount]
-   • Benefits: Listed with bullet points
-   
-3. For pricing information:
-   • Present prices in a clear format: **[Service] - $[Price]**
-   • Group related services together
-   • Include any special offers or packages
-
-4. When making recommendations:
-   • Start with a personalized introduction
-   • List 2-3 specific suggestions
-   • Explain why each recommendation fits the client's needs
-   • Include pricing and duration information
-
-5. For booking guidance:
-   • Present steps in a numbered list
-   • Highlight important requirements in **bold**
-   • Include contact information when relevant
-
-Interaction Guidelines:
-1. Be warm and welcoming - use a friendly, conversational tone
-2. Ask clarifying questions when needed to better understand the client's needs
-3. Make personalized recommendations based on the information provided
-4. Proactively offer relevant information about services, pricing, or policies
-5. If discussing services, mention their benefits and what makes them special
-6. For pricing queries, provide clear pricing info and suggest complementary services
-7. For booking inquiries, guide clients through the process and explain next steps
-
-Remember to maintain a professional yet approachable demeanor while providing accurate information from the context."""
-        
-        # Generate response using OpenAI
-        response = client.chat.completions.create(
-            model="gpt-4-turbo-preview",
-            messages=[
-                {"role": "system", "content": system_message},
-                *conversation_context
-            ],
+        # Get completion from OpenAI
+        completion = openai.chat.completions.create(
+            model="gpt-4",
+            messages=messages,
             temperature=0.7,
-            max_tokens=500
+            max_tokens=150
         )
-        
-        # Extract response text
-        response_data["message"] = response.choices[0].message.content
 
-        # Add booking action if intent is BOOKING
-        if intent == "BOOKING":
-            response_data["actions"].append({
-                "type": "SHOW_CALENDAR"
-            })
-        
-        return response_data
-        
+        return completion.choices[0].message.content
+
     except Exception as e:
         print(f"Error generating response: {str(e)}")
-        print(f"Stack trace: {traceback.format_exc()}")
-        return {
-            "message": "I apologize, but I encountered an error while processing your request. Please try again.",
-            "intent": "ERROR",
-            "actions": []
-        }
+        return "I apologize, but I'm having trouble processing your request right now. Could you please try again?"
 
 def extract_service_id(message: str, conversation_history: list) -> Optional[int]:
     """Extract service ID from conversation context"""

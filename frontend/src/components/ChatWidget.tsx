@@ -6,6 +6,10 @@ import ClientForm, { ClientInfo } from './ClientForm';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
 import 'react-calendar/dist/Calendar.css';
+import { useVirtualizer, VirtualItem } from '@tanstack/react-virtual';
+
+// Import API_BASE_URL from api.ts
+import { API_BASE_URL } from '../utils/api';
 
 interface Service {
   id: number;
@@ -73,6 +77,14 @@ interface ChatWidgetProps {
   theme?: string;
 }
 
+// Add new interface for offline message queue
+interface QueuedMessage {
+  id: string;
+  content: string;
+  timestamp: Date;
+  retryCount: number;
+}
+
 const ChatWidget: React.FC<ChatWidgetProps> = ({
   ratio = '1:1',
   position = 'right',
@@ -109,6 +121,25 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
+  const [sessionId, setSessionId] = useState<string>(
+    localStorage.getItem('chat_session_id') || Math.random().toString(36).substring(7)
+  );
+  
+  // Store session ID in localStorage
+  useEffect(() => {
+    localStorage.setItem('chat_session_id', sessionId);
+  }, [sessionId]);
+  
+  // Update virtualizer with proper typing
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => messagesContainerRef.current,
+    estimateSize: () => 100, // Estimate average message height
+    overscan: 5, // Number of items to render outside of the visible area
+  });
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -154,47 +185,174 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     initializeWidget();
   }, [user?.spa_id]);
 
-  // Add conversation storage
-  const storeConversation = async (messages: Message[]) => {
+  // Update storeConversation to use the new API
+  const storeConversation = async () => {
+    if (!user?.spa_id) return;
+    
     try {
-      await axios.post('/api/conversations', {
-        spa_id: 'default',
-        messages: messages.map(m => ({
-          content: m.content,
-          isUser: m.isUser,
-          timestamp: m.timestamp
-        }))
-      });
+      // We don't need to manually store conversations anymore
+      // as they are stored automatically by the backend
+      console.log('Conversation is being stored automatically by the backend');
     } catch (error) {
       console.error('Error storing conversation:', error);
     }
   };
 
+  // Monitor online/offline status
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // Try to send queued messages when back online
+      processMessageQueue();
+    };
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+  
+  // Process message queue when back online
+  const processMessageQueue = async () => {
+    if (!isOnline || messageQueue.length === 0) return;
+    
+    // Take the first message from the queue
+    const [nextMessage, ...remainingMessages] = messageQueue;
+    setMessageQueue(remainingMessages);
+    
+    try {
+      // Add a sending message to the UI
+      const userMessage: Message = {
+        id: nextMessage.id,
+        content: nextMessage.content,
+        isUser: true,
+        timestamp: nextMessage.timestamp,
+        status: 'sent'
+      };
+      
+      setMessages(prev => [...prev, userMessage]);
+      setIsTyping(true);
+      
+      // Send the message
+      const endpoint = user?.spa_id ? `${API_BASE_URL}/api/chatbot/message` : `${API_BASE_URL}/api/public/chat`;
+      const response = await axios.post(endpoint, {
+        message: nextMessage.content,
+        spa_id: user?.spa_id || 'default',
+        session_id: sessionId,
+        conversation_history: messages.map(m => ({
+          content: m.content,
+          isUser: m.isUser
+        }))
+      });
+      
+      if (response.data) {
+        const botMessage: Message = {
+          id: Math.random().toString(36).substring(7),
+          content: response.data.response || response.data.message || "I'm sorry, I couldn't process that request.",
+          isUser: false,
+          timestamp: new Date(),
+          status: 'sent'
+        };
+        
+        setMessages(prev => [
+          ...prev,
+          botMessage
+        ]);
+        
+        if (response.data.actions && Array.isArray(response.data.actions)) {
+          handleActions(response.data.actions);
+        }
+      }
+      
+      // Process next message in queue if any
+      if (remainingMessages.length > 0) {
+        setTimeout(processMessageQueue, 1000);
+      }
+    } catch (error) {
+      console.error('Error processing queued message:', error);
+      
+      // If failed too many times, mark as failed
+      if (nextMessage.retryCount >= 3) {
+        setMessages(prev => prev.map(m => 
+          m.id === nextMessage.id 
+            ? { ...m, status: 'failed' } 
+            : m
+        ));
+      } else {
+        // Otherwise requeue with increased retry count
+        setMessageQueue([
+          ...remainingMessages, 
+          { ...nextMessage, retryCount: nextMessage.retryCount + 1 }
+        ]);
+      }
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  // Update handleSendMessage to include session_id
   const handleSendMessage = async (messageToRetry?: Message) => {
     if (!inputMessage.trim() && !messageToRetry) return;
-
+    
     const messageId = Math.random().toString(36).substring(7);
+    const messageContent = messageToRetry?.content || inputMessage;
+    
     const userMessage: Message = messageToRetry || {
       id: messageId,
-      content: inputMessage,
+      content: messageContent,
       isUser: true,
       timestamp: new Date(),
       status: 'sent'
     };
-
+    
     if (!messageToRetry) {
       setMessages(prev => [...prev, userMessage]);
       setInputMessage('');
     }
     
+    // If offline, add to queue instead of sending
+    if (!isOnline) {
+      setMessageQueue(prev => [
+        ...prev,
+        {
+          id: userMessage.id,
+          content: userMessage.content,
+          timestamp: userMessage.timestamp,
+          retryCount: 0
+        }
+      ]);
+      
+      // Add a notification message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Math.random().toString(36).substring(7),
+          content: "You're currently offline. Your message will be sent when you're back online.",
+          isUser: false,
+          timestamp: new Date(),
+          status: 'sent'
+        }
+      ]);
+      
+      return;
+    }
+    
     setIsTyping(true);
     setIsLoading(true);
-
+    
     try {
-      const endpoint = user?.spa_id ? '/api/chatbot/message' : '/api/public/chat';
+      const endpoint = user?.spa_id ? `${API_BASE_URL}/api/chatbot/message` : `${API_BASE_URL}/api/public/chat`;
       const response = await axios.post(endpoint, {
         message: userMessage.content,
         spa_id: user?.spa_id || 'default',
+        session_id: sessionId,
         conversation_history: messages.map(m => ({
           content: m.content,
           isUser: m.isUser
@@ -217,7 +375,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
         ]);
 
         if (user?.spa_id) {
-          await storeConversation(messages);
+          await storeConversation();
         }
 
         if (response.data.actions && Array.isArray(response.data.actions)) {
@@ -491,113 +649,219 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     };
   }, []);
 
+  // Handle keyboard navigation for interactive elements
+  const handleKeyDown = (event: React.KeyboardEvent, callback: () => void) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      callback();
+    }
+  };
+
+  // Add function to load conversation history
+  const loadConversationHistory = async () => {
+    if (!user?.spa_id || !sessionId) return;
+    
+    try {
+      // Check if there's an existing conversation for this session
+      const response = await axios.get('/api/chatbot/conversations');
+      const conversations = response.data;
+      
+      // Find conversation with matching session_id
+      const existingConversation = conversations.find(
+        (conv: any) => conv.session_id === sessionId
+      );
+      
+      if (existingConversation) {
+        // Load the conversation messages
+        const detailResponse = await axios.get(`/api/chatbot/conversations/${existingConversation.id}`);
+        const conversationData = detailResponse.data;
+        
+        // Convert to our Message format
+        const loadedMessages: Message[] = conversationData.messages.map((msg: any) => ({
+          id: `loaded-${msg.id}`,
+          content: msg.content,
+          isUser: msg.is_user,
+          timestamp: new Date(msg.timestamp),
+          status: 'sent'
+        }));
+        
+        // Set the messages
+        setMessages(loadedMessages);
+      }
+    } catch (error) {
+      console.error('Error loading conversation history:', error);
+    }
+  };
+  
+  // Load conversation history on initial render if authenticated
+  useEffect(() => {
+    if (user?.spa_id) {
+      loadConversationHistory();
+    }
+  }, [user?.spa_id]);
+
+  // Calculate width based on ratio
+  const getWidthFromRatio = () => {
+    switch (ratio) {
+      case '16:9':
+        return 'max-w-[640px]';
+      case '4:3':
+        return 'max-w-[480px]';
+      default: // 1:1
+        return 'max-w-[400px]';
+    }
+  };
+
+  // Add a function to reset the session
+  const resetSession = () => {
+    // Generate a new session ID
+    const newSessionId = Math.random().toString(36).substring(7);
+    setSessionId(newSessionId);
+    // Clear messages
+    setMessages([]);
+    // Add welcome message
+    setMessages([{
+      id: Math.random().toString(36).substring(7),
+      content: "Hello! How can I help you today?",
+      isUser: false,
+      timestamp: new Date(),
+      status: 'sent'
+    }]);
+  };
+
   return (
     <div 
-      className={`fixed bottom-4 ${position === 'right' ? 'right-4' : position === 'left' ? 'left-4' : 'left-1/2 transform -translate-x-1/2'} z-50`}
+      className={`chat-widget ${style} ${position}`}
+      role="region"
+      aria-label="Chat widget"
     >
       {isOpen ? (
         <div 
-          className={`${
-            style === 'floating' ? 'shadow-lg' : ''
-          } rounded-lg flex flex-col animate-fade-in h-[500px]`}
-          style={{
-            maxWidth: ratio === '16:9' ? '640px' : ratio === '4:3' ? '480px' : '400px',
-            width: '100%',
-            backgroundColor: theme === 'dark' ? '#1a1a1a' : '#ffffff'
-          }}
+          className={`chat-container ${getWidthFromRatio()} w-full`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chat-header"
         >
           {/* Header */}
           <div 
-            className="p-4 rounded-t-lg flex items-center justify-between"
-            style={{ 
-              backgroundColor: theme === 'dark' ? branding.primary_color : branding.secondary_color,
-              color: theme === 'dark' ? '#fff' : '#000'
-            }}
+            id="chat-header"
+            className={`p-4 border-b ${
+              theme === 'dark' 
+                ? 'border-gray-700 bg-gray-900/95' 
+                : 'border-gray-200 bg-white/95'
+            } flex justify-between items-center`}
           >
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center">
               {branding.logo_url && (
                 <img 
                   src={branding.logo_url} 
                   alt="Spa logo" 
-                  className="h-8 w-8 object-contain rounded"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
+                  className="h-8 w-8 mr-2 rounded-full"
                 />
               )}
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  <span className="text-xs">Online</span>
-                </div>
-                <h2 className="text-lg font-semibold">Spa Assistant</h2>
-              </div>
+              <h2 className="font-semibold">Chat with us</h2>
             </div>
-            <button 
-              onClick={() => setIsOpen(false)}
-              className="text-current hover:opacity-75"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Messages */}
-          <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${
-            theme === 'dark' 
-              ? 'bg-gray-900/50' 
-              : 'bg-white/50'
-          }`}>
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`chat-message ${message.isUser ? 'user-message' : 'bot-message'}`}
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={resetSession}
+                aria-label="Start new conversation"
+                className="text-gray-500 hover:text-gray-700 p-1"
+                title="Start new conversation"
               >
-                <div>{formatMessage(message)}</div>
-                <span className={`text-xs ${
-                  theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                } mt-1 block`}>
-                  {message.timestamp.toLocaleTimeString()}
-                </span>
-              </div>
-            ))}
-
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <button 
+                onClick={() => setIsOpen(false)}
+                aria-label="Close chat"
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          {/* Messages */}
+          <div 
+            ref={messagesContainerRef}
+            className="flex-1 p-4 overflow-y-auto messages-container"
+            style={{ height: '400px' }}
+            role="log"
+            aria-live="polite"
+            aria-atomic="false"
+          >
+            <div
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {virtualizer.getVirtualItems().map((virtualRow: VirtualItem) => {
+                const message = messages[virtualRow.index];
+                return (
+                  <div
+                    key={virtualRow.index}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                    className={`chat-message ${message.isUser ? 'user-message' : 'bot-message'}`}
+                  >
+                    {formatMessage(message)}
+                  </div>
+                );
+              })}
+            </div>
+            
             {/* Service Selection */}
             {availableServices.length > 0 && !bookingState.selectedService && (
-              <div className="space-y-2">
+              <div className="space-y-2 p-4" role="listbox" aria-label="Available services">
                 {availableServices.map((service) => (
-                  <button
+                  <div
                     key={service.id}
                     onClick={() => handleServiceSelect(service)}
-                    className="w-full p-4 text-left bg-white border rounded-lg hover:bg-gray-50"
+                    onKeyDown={(e) => handleKeyDown(e, () => handleServiceSelect(service))}
+                    className="p-4 border rounded-lg cursor-pointer hover:bg-gray-50"
+                    role="option"
+                    aria-selected="false"
+                    tabIndex={0}
                   >
                     <h3 className="font-semibold">{service.name}</h3>
                     <p className="text-sm text-gray-600">{service.description}</p>
-                    <div className="mt-2 text-sm text-gray-500">
-                      <span>{service.duration} minutes</span>
-                      <span className="mx-2">•</span>
-                      <span>${service.price}</span>
-                    </div>
-                  </button>
+                    <p className="text-sm font-semibold">${service.price} • {service.duration} min</p>
+                  </div>
                 ))}
               </div>
             )}
-
+            
+            {/* Location Selection */}
             {availableLocations.length > 0 && bookingState.selectedService && !bookingState.selectedLocation && (
-              <div className="space-y-2">
+              <div className="space-y-2 p-4" role="listbox" aria-label="Available locations">
                 {availableLocations.map((location) => (
-                  <button
+                  <div
                     key={location.id}
                     onClick={() => handleLocationSelect(location)}
-                    className="w-full p-4 text-left bg-white border rounded-lg hover:bg-gray-50"
+                    onKeyDown={(e) => handleKeyDown(e, () => handleLocationSelect(location))}
+                    className="p-4 border rounded-lg cursor-pointer hover:bg-gray-50"
+                    role="option"
+                    aria-selected="false"
+                    tabIndex={0}
                   >
                     <h3 className="font-semibold">{location.name}</h3>
                     <p className="text-sm text-gray-600">{location.address}</p>
                     <p className="text-sm text-gray-600">{location.city}, {location.state}</p>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
-
+            
             {isTyping && (
               <div className="chat-message bot-message">
                 <div className="flex space-x-2">
@@ -695,7 +959,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
               ? 'border-gray-700 bg-gray-900/95' 
               : 'border-gray-200 bg-white/95'
           }`}>
-            <div className="flex space-x-2">
+            <div className="flex space-x-2" role="form" aria-label="Chat message form">
               <input
                 type="text"
                 value={inputMessage}
@@ -703,16 +967,22 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
                 onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                 placeholder="Type your message..."
                 className="chat-input"
+                aria-label="Message input"
               />
               <button
                 onClick={() => handleSendMessage()}
-                disabled={isLoading}
+                disabled={isLoading || !isOnline}
                 className="send-button disabled:opacity-50"
                 aria-label="Send message"
               >
                 <PaperAirplaneIcon className="h-5 w-5" />
               </button>
             </div>
+            {!isOnline && (
+              <p className="text-red-500 text-xs mt-1" role="alert">
+                You're offline. Messages will be sent when you reconnect.
+              </p>
+            )}
           </div>
         </div>
       ) : (
@@ -723,6 +993,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
           }}
           className="bg-primary-500 text-white rounded-full p-4 shadow-lg hover:bg-primary-600 animate-bounce-gentle relative"
           style={{ backgroundColor: branding.primary_color }}
+          aria-label="Open chat"
         >
           <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-green-400 animate-pulse" />
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

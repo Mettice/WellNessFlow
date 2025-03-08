@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { api } from '../../../utils/api';
+import { useToast } from '../../../hooks/useToast';
 
 interface ScheduledContent {
   id: string;
@@ -13,15 +14,25 @@ interface ScheduledContent {
 
 const ContentScheduler = () => {
   const { theme } = useTheme();
+  const { showToast } = useToast();
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
   const [scheduledContent, setScheduledContent] = useState<ScheduledContent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
+  const [formData, setFormData] = useState({
+    platform: 'blog' as 'blog' | 'facebook' | 'instagram' | 'email',
+    title: '',
+    content: '',
+    scheduledFor: new Date().toISOString().slice(0, 16),
+    contentType: 'blog'
+  });
 
   useEffect(() => {
     fetchScheduledContent();
+    fetchConnectedPlatforms();
   }, [selectedDate]);
 
   const fetchScheduledContent = async () => {
@@ -47,6 +58,19 @@ const ContentScheduler = () => {
       setError(err.response?.data?.error || 'An error occurred while fetching scheduled content');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchConnectedPlatforms = async () => {
+    try {
+      // In a real implementation, this would call the API
+      // const result = await api.integrations.getIntegrations();
+      // const platforms = result.data.map((integration: any) => integration.platformId);
+      
+      // For demo purposes, use mock data
+      setConnectedPlatforms(['blog', 'facebook']);
+    } catch (err) {
+      console.error('Error fetching connected platforms:', err);
     }
   };
 
@@ -104,6 +128,66 @@ const ContentScheduler = () => {
     }
   };
 
+  const isPlatformConnected = (platform: string) => {
+    return connectedPlatforms.includes(platform);
+  };
+
+  const renderPlatformSelector = () => (
+    <div className="mb-6">
+      <label 
+        className={`block text-sm font-medium mb-2 ${
+          theme === 'dark' ? 'text-accent-cream' : 'text-gray-700'
+        }`}
+      >
+        Platform
+      </label>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {['blog', 'facebook', 'instagram', 'email'].map(platform => (
+          <div 
+            key={platform}
+            className={`
+              relative p-3 border rounded-md cursor-pointer flex items-center
+              ${formData.platform === platform 
+                ? `border-primary-500 ${theme === 'dark' ? 'bg-dark-400' : 'bg-blue-50'}` 
+                : `${theme === 'dark' ? 'border-dark-200 bg-dark-300' : 'border-gray-300 bg-white'}`
+              }
+              ${!isPlatformConnected(platform) ? 'opacity-50' : ''}
+            `}
+            onClick={() => {
+              if (isPlatformConnected(platform)) {
+                setFormData({ ...formData, platform: platform as any });
+              } else {
+                showToast(`Please connect to ${platform} in the Integrations Dashboard first`, 'warning');
+              }
+            }}
+          >
+            <span className="text-xl mr-2">
+              {platform === 'blog' && '📝'}
+              {platform === 'facebook' && '📘'}
+              {platform === 'instagram' && '📷'}
+              {platform === 'email' && '📧'}
+            </span>
+            <span className={`capitalize ${theme === 'dark' ? 'text-accent-cream' : 'text-gray-900'}`}>
+              {platform}
+            </span>
+            {!isPlatformConnected(platform) && (
+              <div className="absolute top-1 right-1">
+                <span className="text-xs bg-gray-200 text-gray-800 px-1 py-0.5 rounded">
+                  Not Connected
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {!isPlatformConnected(formData.platform) && (
+        <p className="mt-2 text-sm text-yellow-500">
+          This platform is not connected. Visit the <a href="/admin/integrations" className="underline">Integrations Dashboard</a> to connect.
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-dark-400' : 'bg-gray-50'}`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -152,6 +236,9 @@ const ContentScheduler = () => {
             </button>
           </div>
         </div>
+
+        {/* Platform Selection */}
+        {renderPlatformSelector()}
 
         {error && (
           <div className="mb-8 p-4 rounded-lg bg-red-100 text-red-800">

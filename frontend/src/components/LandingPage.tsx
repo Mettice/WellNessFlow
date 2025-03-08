@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChartBarIcon,
@@ -11,10 +11,11 @@ import {
   MoonIcon,
   SunIcon,
   UserCircleIcon,
- 
+  PaperAirplaneIcon,
 } from '@heroicons/react/24/outline';
 import ChatWidget from '../components/ChatWidget';
 import { useTheme } from '../contexts/ThemeContext';
+import axios from 'axios';
 
 interface WidgetConfig {
   ratio: '1:1' | '4:3' | '16:9';
@@ -171,6 +172,161 @@ const testimonials = [
     quote: "The automated booking system has reduced our no-shows by 75%. The reminders and follow-ups are fantastic, and our clients love the seamless experience."
   }
 ];
+
+// Add a demo chat widget wrapper component
+const DemoChatWidget = () => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [messages, setMessages] = useState([
+    {
+      id: '1',
+      content: "👋 Hello! I'm your spa assistant. How can I help you today?",
+      isUser: false,
+      timestamp: new Date()
+    }
+  ]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const toggleWidget = () => {
+    setIsVisible(!isVisible);
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim()) return;
+    
+    const userMessage = {
+      id: Math.random().toString(36).substring(7),
+      content: inputMessage,
+      isUser: true,
+      timestamp: new Date()
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+    setInputMessage('');
+    setIsLoading(true);
+    
+    try {
+      // Use the public chat endpoint
+      const response = await axios.post('/api/public/chat', {
+        message: userMessage.content,
+        spa_id: 'default',
+        session_id: 'demo-session',
+        conversation_history: messages.map(m => ({
+          content: m.content,
+          isUser: m.isUser
+        }))
+      });
+
+      if (response.data) {
+        const botMessage = {
+          id: Math.random().toString(36).substring(7),
+          content: response.data.response || response.data.message || "I'm sorry, I couldn't process that request.",
+          isUser: false,
+          timestamp: new Date()
+        };
+
+        setMessages(prev => [...prev, botMessage]);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      const errorMessage = {
+        id: Math.random().toString(36).substring(7),
+        content: "Sorry, I encountered an error. Please try again.",
+        isUser: false,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed bottom-4 right-4 z-50">
+      {!isVisible ? (
+        <button 
+          onClick={toggleWidget}
+          className="bg-primary-500 hover:bg-primary-600 text-white rounded-full p-4 shadow-lg flex items-center justify-center transition-all"
+        >
+          <ChatBubbleBottomCenterTextIcon className="h-6 w-6" />
+          <span className="ml-2 font-medium">Try Demo Chat</span>
+        </button>
+      ) : (
+        <div className="bg-white dark:bg-dark-300 rounded-lg shadow-xl overflow-hidden flex flex-col" style={{ width: '350px', height: '500px' }}>
+          <div className="bg-primary-500 text-white p-3 flex justify-between items-center">
+            <h3 className="font-medium">Demo Chat</h3>
+            <button onClick={toggleWidget} className="text-white hover:text-gray-200">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex-grow overflow-y-auto p-4">
+            {messages.map((message) => (
+              <div 
+                key={message.id} 
+                className={`mb-4 ${message.isUser ? 'text-right' : 'text-left'}`}
+              >
+                <div 
+                  className={`inline-block p-3 rounded-lg ${
+                    message.isUser 
+                      ? 'bg-primary-500 text-white' 
+                      : 'bg-gray-100 dark:bg-dark-200 text-gray-800 dark:text-gray-200'
+                  }`}
+                >
+                  {message.content}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="text-left mb-4">
+                <div className="inline-block p-3 rounded-lg bg-gray-100 dark:bg-dark-200">
+                  <div className="flex space-x-2">
+                    <div className="w-2 h-2 rounded-full animate-bounce bg-gray-400" />
+                    <div className="w-2 h-2 rounded-full animate-bounce delay-100 bg-gray-400" />
+                    <div className="w-2 h-2 rounded-full animate-bounce delay-200 bg-gray-400" />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                placeholder="Type your message..."
+                className="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-dark-400 dark:text-white"
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={isLoading || !inputMessage.trim()}
+                className="p-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <PaperAirplaneIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const LandingPage = () => {
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
@@ -1465,6 +1621,9 @@ const LandingPage = () => {
           </div>
         </footer>
       </div>
+      
+      {/* Add the demo chat widget */}
+      <DemoChatWidget />
     </div>
   );
 };

@@ -109,14 +109,14 @@ const ContentDashboard = () => {
             </h2>
             <div className="space-y-4">
               <Link
-                to="/features/content/generator"
+                to="/admin/content/generator"
                 className="block w-full px-4 py-2 rounded bg-primary-500 hover:bg-primary-600 text-white text-center transition-colors"
               >
                 Create New Content
               </Link>
               
               <Link
-                to="/features/content/scheduler"
+                to="/admin/content/scheduler"
                 className="block w-full px-4 py-2 rounded bg-primary-500 hover:bg-primary-600 text-white text-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Schedule Content
@@ -124,11 +124,18 @@ const ContentDashboard = () => {
               </Link>
               
               <Link
-                to="/features/content/analytics"
+                to="/admin/content/analytics"
                 className="block w-full px-4 py-2 rounded bg-primary-500 hover:bg-primary-600 text-white text-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 View Analytics
                 <span className="text-xs ml-2">(Coming Soon)</span>
+              </Link>
+              
+              <Link
+                to="/admin/integrations"
+                className="block w-full px-4 py-2 rounded bg-primary-500 hover:bg-primary-600 text-white text-center transition-colors"
+              >
+                Manage Platform Integrations
               </Link>
             </div>
           </div>

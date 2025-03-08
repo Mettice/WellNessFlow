@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../utils/api';
 
 interface Message {
   text: string;
@@ -72,7 +73,7 @@ const DemoChatWidget: React.FC = () => {
 
     try {
       // Use the public chat endpoint for NLP responses
-      const chatResponse = await axios.post('/api/public/chat', {
+      const chatResponse = await axios.post(`${API_BASE_URL}/api/public/chat`, {
         message: input,
         conversation_history: messages.map(m => ({
           role: m.sender === 'user' ? 'user' : 'assistant',
@@ -92,7 +93,7 @@ const DemoChatWidget: React.FC = () => {
         
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-        const slotsResponse = await axios.get(`/api/mock/appointments/available?date=${tomorrow.toISOString().split('T')[0]}`);
+        const slotsResponse = await axios.get(`${API_BASE_URL}/api/mock/appointments/available?date=${tomorrow.toISOString().split('T')[0]}`);
         
         const slots = slotsResponse.data.slots;
         const availableSlots = slots.slice(0, 3);
@@ -152,7 +153,7 @@ const DemoChatWidget: React.FC = () => {
           console.log('Customer info collected:', updatedInfo);
           
           try {
-            await axios.post('/api/mock/appointments', {
+            await axios.post(`${API_BASE_URL}/api/mock/appointments`, {
               start_time: selectedSlot.start_time,
               duration: selectedSlot.duration || 60,
               customer_info: updatedInfo,

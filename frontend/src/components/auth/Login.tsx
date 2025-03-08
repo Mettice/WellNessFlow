@@ -1,24 +1,53 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [emailError, setEmailError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
 
+  // Email validation function
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return emailRegex.test(email);
+  };
+
+  // Handle email change with validation
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newEmail = e.target.value;
+    setEmail(newEmail);
+    
+    if (newEmail && !validateEmail(newEmail)) {
+      setEmailError('Please enter a valid email address (e.g., example@domain.com)');
+    } else {
+      setEmailError('');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Validate email format
+    if (!validateEmail(email)) {
+      setError('Please enter a valid email address (e.g., example@domain.com)');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
+      console.log('Submitting login form with:', { email });
       await login(email, password);
       // Get the user from the auth context
       const user = JSON.parse(localStorage.getItem('user') || '{}');
+      
+      console.log('Login successful, user:', user);
       
       // Navigate based on user role
       if (user.role === 'super_admin') {
@@ -30,7 +59,20 @@ const Login: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      setError(err.response?.data?.error || 'Failed to login');
+      if (err.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        setError(err.response.data?.error || `Server error: ${err.response.status}`);
+        console.error('Response data:', err.response.data);
+        console.error('Response status:', err.response.status);
+      } else if (err.request) {
+        // The request was made but no response was received
+        setError('No response from server. Please check your connection.');
+        console.error('Request:', err.request);
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        setError(`Error: ${err.message}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -63,9 +105,14 @@ const Login: React.FC = () => {
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
                 placeholder="Email address"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={handleEmailChange}
                 disabled={isLoading}
               />
+              {emailError && (
+                <div className="text-red-500 text-sm mt-1">
+                  {emailError}
+                </div>
+              )}
             </div>
             <div>
               <label htmlFor="password" className="sr-only">
@@ -98,6 +145,16 @@ const Login: React.FC = () => {
             </button>
           </div>
         </form>
+        
+        {/* Add register section */}
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-600">
+            Don't have an account?{' '}
+            <Link to="/register" className="font-medium text-primary-500 hover:text-primary-600">
+              Register now
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );

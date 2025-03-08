@@ -12,10 +12,21 @@ interface CalendarIntegrationProps {
 interface CalendarConfig {
   api_key?: string;
   api_url?: string;
+  auth_type?: 'api_key' | 'basic_auth' | 'none';
+  username?: string;
+  password?: string;
+  slots_endpoint?: string;
+  slots_method?: 'GET' | 'POST';
+  booking_endpoint?: string;
+  booking_method?: 'POST' | 'PUT';
+  slots_response_path?: string;
+  start_time_field?: string;
+  duration_field?: string;
   business_hours: {
     weekday: { open: string; close: string };
     weekend: { open: string; close: string };
   };
+  company_login?: string;
 }
 
 const CALENDAR_TYPES = [
@@ -60,6 +71,13 @@ const CALENDAR_TYPES = [
     name: 'Internal Calendar',
     description: 'Use our built-in calendar system',
     icon: '📊'
+  },
+  {
+    id: 'simplybook',
+    name: 'SimplyBook.me',
+    description: 'Connect to SimplyBook.me',
+    icon: '📅',
+    requiresApiKey: true
   }
 ];
 
@@ -75,6 +93,8 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
   });
   const { user } = useAuth();
   const { showToast } = useToast();
+  const [customCalendarStep, setCustomCalendarStep] = useState(1);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
     // Set up axios interceptor for authentication
@@ -98,32 +118,14 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
 
   const fetchCalendarConfig = async () => {
     try {
-      const response = await axios.get('/api/admin/settings');
-      if (response.data?.calendar_settings) {
-        const settings = response.data.calendar_settings;
-        setSelectedCalendar(settings.calendar_type || '');
-        setCalendarConfig({
-          business_hours: settings.business_hours || {
-            weekday: { open: '09:00', close: '17:00' },
-            weekend: { open: '10:00', close: '16:00' }
-          },
-          api_key: settings.api_key || '',
-          api_url: settings.api_url || ''
-        });
+      const response = await axios.get('/api/admin/settings/calendar');
+      if (response.status === 200) {
+        const { calendar_type, ...config } = response.data;
+        setSelectedCalendar(calendar_type || '');
+        setCalendarConfig(config);
         
-        // If we have a valid calendar type set, notify parent component
-        if (settings.calendar_type && settings.calendar_type !== 'none' && onSuccess) {
-          onSuccess();
-        }
-      } else {
-        // Reset to default state if no settings found
-        setSelectedCalendar('');
-        setCalendarConfig({
-          business_hours: {
-            weekday: { open: '09:00', close: '17:00' },
-            weekend: { open: '10:00', close: '16:00' }
-          }
-        });
+        // Set isConnected based on whether a calendar type is selected
+        setIsConnected(!!calendar_type && calendar_type !== 'none');
       }
     } catch (error: any) {
       // Reset to default state on error
@@ -134,6 +136,7 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
           weekend: { open: '10:00', close: '16:00' }
         }
       });
+      setIsConnected(false);
 
       if (error.response?.status === 401) {
         showToast({ title: 'Please log in to access calendar settings', type: 'error' });
@@ -231,6 +234,7 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
             weekend: { open: '10:00', close: '16:00' }
           }
         });
+        setIsConnected(false);
         showToast({ title: 'Calendar disconnected successfully', type: 'success' });
       }
     } catch (error: any) {
@@ -243,6 +247,29 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
       ...prev,
       [field]: value
     }));
+  };
+
+  const handleTestCustomConnection = async () => {
+    try {
+      setIsConnecting(true);
+      const response = await axios.post('/api/admin/calendar/test-connection', {
+        type: 'custom',
+        settings: calendarConfig
+      });
+      
+      if (response.data.success) {
+        showToast({ title: 'Connection successful!', type: 'success' });
+      } else {
+        showToast({ title: `Connection failed: ${response.data.message}`, type: 'error' });
+      }
+    } catch (error: any) {
+      showToast({ 
+        title: `Connection failed: ${error.response?.data?.message || 'Unknown error'}`, 
+        type: 'error' 
+      });
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   return (
@@ -318,12 +345,14 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
                 >
                   {isConnecting ? 'Connecting...' : 'Save & Connect'}
                 </button>
-                <button
-                  onClick={handleDisconnect}
-                  className="px-4 py-2 text-sm text-red-600 border border-red-600 rounded hover:bg-red-50"
-                >
-                  Disconnect Calendar
-                </button>
+                {isConnected && (
+                  <button 
+                    className="text-red-600 border border-red-600 px-4 py-2 rounded-md"
+                    onClick={handleDisconnect}
+                  >
+                    Disconnect Calendar
+                  </button>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -370,6 +399,133 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
             </div>
           </div>
         </>
+      )}
+
+      {selectedCalendar === 'custom' && (
+        <div className="mt-4">
+          {customCalendarStep === 1 && (
+            <div className="space-y-4">
+              <h4 className="font-medium">Step 1: Basic Configuration</h4>
+              {/* Authentication and API URL fields */}
+              <button 
+                onClick={() => setCustomCalendarStep(2)}
+                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
+              >
+                Next
+              </button>
+            </div>
+          )}
+          
+          {customCalendarStep === 2 && (
+            <div className="space-y-4">
+              <h4 className="font-medium">Step 2: Endpoint Configuration</h4>
+              {/* Endpoint fields */}
+              <div className="flex justify-between">
+                <button 
+                  onClick={() => setCustomCalendarStep(1)}
+                  className="px-4 py-2 border rounded"
+                >
+                  Back
+                </button>
+                <button 
+                  onClick={() => setCustomCalendarStep(3)}
+                  className="px-4 py-2 bg-blue-500 text-white rounded"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {customCalendarStep === 3 && (
+            <div className="space-y-4">
+              <h4 className="font-medium">Step 3: Response Mapping</h4>
+              {/* Response mapping fields */}
+              <div className="flex justify-between">
+                <button 
+                  onClick={() => setCustomCalendarStep(2)}
+                  className="px-4 py-2 border rounded"
+                >
+                  Back
+                </button>
+                <button 
+                  onClick={handleSaveConfig}
+                  className="px-4 py-2 bg-green-500 text-white rounded"
+                >
+                  Save Configuration
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedCalendar === 'custom' && (
+        <div className="mt-4 border-t pt-4">
+          <h4 className="font-medium mb-2">Endpoint Configuration</h4>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Available Slots Endpoint</label>
+              <div className="flex items-center">
+                <select 
+                  className="w-1/4 p-2 border rounded-l"
+                  value={calendarConfig.slots_method || 'GET'}
+                  onChange={(e) => handleConfigChange('slots_method', e.target.value)}
+                >
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="/available-slots"
+                  className="w-3/4 p-2 border border-l-0 rounded-r"
+                  value={calendarConfig.slots_endpoint || ''}
+                  onChange={(e) => handleConfigChange('slots_endpoint', e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Endpoint to get available time slots (e.g., /api/slots)
+              </p>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1">Book Appointment Endpoint</label>
+              <div className="flex items-center">
+                <select 
+                  className="w-1/4 p-2 border rounded-l"
+                  value={calendarConfig.booking_method || 'POST'}
+                  onChange={(e) => handleConfigChange('booking_method', e.target.value)}
+                >
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="/appointments"
+                  className="w-3/4 p-2 border border-l-0 rounded-r"
+                  value={calendarConfig.booking_endpoint || ''}
+                  onChange={(e) => handleConfigChange('booking_endpoint', e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Endpoint to book an appointment (e.g., /api/appointments)
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedCalendar === 'custom' && (
+        <div className="mt-6">
+          <button
+            type="button"
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            onClick={handleTestCustomConnection}
+          >
+            Test Connection
+          </button>
+        </div>
       )}
 
       {isConnecting && (

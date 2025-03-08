@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../contexts/ThemeContext';
 import BrandSettings from './BrandSettings';
 import { useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 interface BusinessProfile {
   businessName: string;
@@ -142,10 +143,12 @@ const Settings: React.FC = () => {
       setBusinessProfile(profileResponse.data);
     } catch (error) {
       console.error('Error fetching settings:', error);
-      showToast({ 
-        title: 'Failed to load settings',
-        type: 'error'
-      });
+      if (axios.isAxiosError(error) && error.response && error.response.status !== 404) {
+        showToast({ 
+          title: 'Failed to load settings',
+          type: 'error'
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -908,6 +911,21 @@ const Settings: React.FC = () => {
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
               rows={3}
             />
+          </div>
+
+          <hr className="my-6 border-gray-200 dark:border-gray-700" />
+          
+          <div className="text-center pt-4">
+            <h4 className="text-md font-medium text-gray-900 dark:text-white mb-2">External Integrations</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Connect your chatbot with Facebook, Instagram, and other platforms
+            </p>
+            <Link
+              to="/chatbot/integrations"
+              className="inline-block px-6 py-3 rounded bg-primary-500 hover:bg-primary-600 text-white transition-colors"
+            >
+              Manage Integrations
+            </Link>
           </div>
         </div>
       </div>

@@ -11,13 +11,22 @@ const FileUpload: React.FC = () => {
   const handleUpload = async () => {
     if (!file) return;
 
+    // Check if user is authenticated
+    if (!user) {
+      setError('Please log in to upload documents');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', file);
+    if (user.spa_id) {
+      formData.append('spa_id', user.spa_id);
+    }
 
     // Get JWT token from localStorage
     const token = localStorage.getItem('token');
     if (!token) {
-      setError('Please log in to upload documents');
+      setError('Authentication token not found');
       return;
     }
 
@@ -28,6 +37,7 @@ const FileUpload: React.FC = () => {
       const response = await axios.post('/api/upload', formData, {
         headers: { 
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
         }
       });
 

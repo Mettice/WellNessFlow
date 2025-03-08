@@ -7,6 +7,7 @@ import Settings from './Settings';
 import CalendarIntegration from './CalendarIntegration';
 import WidgetGenerator from './WidgetGenerator';
 import StaffManagement from './StaffManagement';
+import { useNavigate } from 'react-router-dom';
 
 // Define types
 interface NavItem {
@@ -48,6 +49,7 @@ interface DailyMetrics {
 const defaultNavigation: NavItem[] = [
   { name: 'Overview', icon: () => <span>📊</span>, current: true },
   { name: 'Documents', icon: () => <span>📄</span>, current: false },
+  { name: 'Content', icon: () => <span>📝</span>, current: false },
   { name: 'Calendar', icon: () => <span>📅</span>, current: false },
   { name: 'Staff', icon: () => <span>👥</span>, current: false },
   { name: 'Widget', icon: () => <span>🔧</span>, current: false },
@@ -64,6 +66,8 @@ const ErrorFallback: React.FC<{ error: Error; resetErrorBoundary: () => void }> 
 
 const Dashboard: React.FC = () => {
   const { theme } = useTheme();
+  const navigate = useNavigate();
+  const { showToast } = useToast();
   const [navigation, setNavigation] = useState(defaultNavigation);
   const [botMetrics, setBotMetrics] = useState<BotMetrics>({
     totalConversations: 0,
@@ -86,58 +90,268 @@ const Dashboard: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const { showToast } = useToast();
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
+  const [todayAppointments, setTodayAppointments] = useState<any[]>([]);
 
   useEffect(() => {
+    verifyTokenOnMount();
     fetchBotMetrics();
     fetchDocuments();
     fetchDailyMetrics();
   }, []);
 
+  // Verify token on component mount
+  const verifyTokenOnMount = () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error('No token found on Dashboard mount');
+      // Don't redirect automatically - just log the error
+      return;
+    }
+    
+    // Verify token format
+    try {
+      const tokenParts = token.split('.');
+      if (tokenParts.length !== 3) {
+        console.error('Invalid token format');
+        // Don't redirect
+        return;
+      }
+      
+      // Decode token to check expiration
+      const payload = JSON.parse(atob(tokenParts[1]));
+      console.log('Dashboard: Token payload:', payload);
+      
+      // Check for token expiration
+      if (payload.exp) {
+        const expDate = new Date(payload.exp * 1000);
+        const now = new Date();
+        console.log(`Token expires: ${expDate.toLocaleString()}, Current time: ${now.toLocaleString()}`);
+        
+        if (expDate < now) {
+          console.warn('Token expired, but NOT auto-redirecting to login');
+          return;
+        }
+      }
+      
+      // Verify token has required claims
+      if (!payload.user_id || !payload.role) {
+        console.error('Token missing required claims');
+        // Don't redirect
+        return;
+      }
+      
+      // Ensure token is in Authorization header
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      console.log('Dashboard: Authorization header has been set');
+      
+    } catch (e) {
+      console.error('Error verifying token:', e);
+      // Don't redirect
+    }
+  };
+
   const fetchBotMetrics = async () => {
     try {
+      console.log('Fetching bot metrics...');
+      setLoadingMetrics(true);
+      
+      // Check if token exists and is set in headers before making the request
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No token available for API request');
+        setBotMetrics({
+          totalConversations: 0,
+          successfulBookings: 0,
+          averageResponseTime: '0s',
+          conversionRate: 0,
+          popularServices: [],
+          peakHours: []
+        });
+        setLoadingMetrics(false);
+        return;
+      }
+      
+      // Ensure Authorization header is set
+      if (!axios.defaults.headers.common['Authorization']) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        console.log('Setting Authorization header:', axios.defaults.headers.common['Authorization']);
+      }
+      
+      // Get the JWT payload to extract spa_id
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        console.log('JWT payload:', payload);
+        
+        // Check for spa_id in sub claim
+        if (payload.sub) {
+          console.log('Found spa_id in sub claim:', payload.sub);
+          
+          // Set X-Spa-ID header explicitly
+          axios.defaults.headers.common['X-Spa-ID'] = payload.sub;
+          console.log('Set X-Spa-ID header:', axios.defaults.headers.common['X-Spa-ID']);
+        } else {
+          console.warn('No spa_id found in JWT sub claim');
+        }
+      } catch (e) {
+        console.error('Error parsing JWT token:', e);
+      }
+      
+      // Make the API request
+      console.log('Making bot metrics API request with headers:', axios.defaults.headers.common);
       const response = await axios.get('/api/admin/bot-metrics');
-      setBotMetrics(response.data);
-    } catch (error) {
+      console.log('Bot metrics response:', response);
+      
+      // Check if we got a valid response with data
+      if (response.data && typeof response.data === 'object') {
+        console.log('Received valid bot metrics data:', response.data);
+        setBotMetrics(response.data);
+      } else {
+        // Handle empty response by setting default values
+        console.warn('Empty response received for bot metrics');
+        setBotMetrics({
+          totalConversations: 0,
+          successfulBookings: 0,
+          averageResponseTime: '0s',
+          conversionRate: 0,
+          popularServices: [],
+          peakHours: []
+        });
+      }
+    } catch (error: any) {
       console.error('Error fetching bot metrics:', error);
-      showToast({ 
-        title: 'Failed to load metrics',
-        type: 'error'
+      
+      // Log detailed error information
+      if (error.response) {
+        console.error(`API Error: ${error.response.status} - ${error.response.statusText}`);
+        console.error('Error data:', error.response.data);
+      } else if (error.request) {
+        console.error('No response received from server');
+      } else {
+        console.error('Error setting up request:', error.message);
+      }
+      
+      // Set default values instead of showing error for new users
+      setBotMetrics({
+        totalConversations: 0,
+        successfulBookings: 0,
+        averageResponseTime: '0s',
+        conversionRate: 0,
+        popularServices: [],
+        peakHours: []
       });
     } finally {
-      setLoading(false);
+      setLoadingMetrics(false);
     }
   };
 
   const fetchDocuments = async () => {
-    try {
-      const response = await axios.get('/api/documents');
-      setDocuments(response.data);
-    } catch (error) {
-      console.error('Error fetching documents:', error);
-      showToast({ 
-        title: 'Failed to load documents',
-        type: 'error'
-      });
-    } finally {
+    setLoadingDocs(true);
+    
+    // Get the spa_id from localStorage
+    const spa_id = localStorage.getItem('spa_id');
+    if (!spa_id) {
+      console.error('No spa_id found in localStorage');
+      setDocuments([]);
       setLoadingDocs(false);
+      return;
     }
+    
+    console.log(`Fetching documents with spa_id: ${spa_id}`);
+    
+    try {
+      // Use the spa_id directly from localStorage, let the interceptor handle adding it to URL
+      // Remove explicit spa_id in URL to avoid duplication
+      const response = await axios.get('/api/documents');
+      
+      if (response.data && Array.isArray(response.data)) {
+        setDocuments(response.data);
+      } else {
+        console.warn('Invalid response format for documents:', response.data);
+        setDocuments([]);
+      }
+    } catch (error: any) {
+      console.error('Error fetching documents:', error);
+      
+      if (error.response) {
+        console.error(`API Error: ${error.response.status} - ${error.response.statusText}`);
+        if (error.response.data) {
+          console.error('Error data:', error.response.data);
+        }
+      }
+      
+      setDocuments([]);
+      
+      // Only show toast for errors other than 404
+      if (error.response && error.response.status !== 404) {
+        showToast({ 
+          title: 'Failed to fetch documents',
+          type: 'error'
+        });
+      }
+    }
+    
+    setLoadingDocs(false);
   };
 
   const fetchDailyMetrics = async () => {
     try {
-      const [metricsRes, appointmentsRes] = await Promise.all([
-        axios.get('/api/admin/metrics/daily'),
-        axios.get('/api/admin/appointments/today')
-      ]);
-      setDailyMetrics(metricsRes.data);
-      setAppointments(appointmentsRes.data);
+      setLoadingMetrics(true);
+      
+      // Get spa_id from localStorage
+      const spa_id = localStorage.getItem('spa_id');
+      if (!spa_id) {
+        console.error('No spa_id available for API request');
+        setDailyMetrics({
+          total_appointments: 0,
+          completed_appointments: 0,
+          revenue_today: 0,
+          upcoming_appointments: 0
+        });
+        setTodayAppointments([]);
+        setLoadingMetrics(false);
+        return;
+      }
+      
+      // Let the interceptor handle adding spa_id to the URL
+      const metricsResponse = await axios.get('/api/admin/metrics/daily');
+      
+      const defaultMetrics = {
+        total_appointments: 0,
+        completed_appointments: 0,
+        revenue_today: 0,
+        upcoming_appointments: 0
+      };
+      
+      // If we get valid data, use it
+      if (metricsResponse.data) {
+        setDailyMetrics(metricsResponse.data);
+      } else {
+        setDailyMetrics(defaultMetrics);
+      }
+      
+      // Let the interceptor handle adding spa_id to the URL
+      const appointmentsResponse = await axios.get('/api/admin/appointments/today');
+      
+      // If we get valid appointment data, use it
+      if (appointmentsResponse.data && Array.isArray(appointmentsResponse.data)) {
+        setTodayAppointments(appointmentsResponse.data);
+      } else {
+        setTodayAppointments([]);
+      }
     } catch (error) {
       console.error('Error fetching daily metrics:', error);
-      showToast({
-        title: 'Failed to load daily metrics',
-        type: 'error'
+      
+      // Set default data on error
+      setDailyMetrics({
+        total_appointments: 0,
+        completed_appointments: 0,
+        revenue_today: 0,
+        upcoming_appointments: 0
       });
+      setTodayAppointments([]);
+    } finally {
+      setLoadingMetrics(false);
     }
   };
 
@@ -240,6 +454,7 @@ const Dashboard: React.FC = () => {
         <h2 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
           Today's Overview
         </h2>
+        
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
             <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -331,16 +546,22 @@ const Dashboard: React.FC = () => {
                 Popular Services
               </h3>
               <div className="space-y-3">
-                {botMetrics.popularServices.map((service, index) => (
-                  <div key={index} className="flex justify-between items-center">
-                    <span className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {service.service}
-                    </span>
-                    <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {service.count} bookings
-                    </span>
-                  </div>
-                ))}
+                {botMetrics.popularServices.length > 0 ? (
+                  botMetrics.popularServices.map((service, index) => (
+                    <div key={index} className="flex justify-between items-center">
+                      <span className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {service.service}
+                      </span>
+                      <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {service.count} bookings
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className={`text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    No service data available yet
+                  </p>
+                )}
               </div>
             </div>
 
@@ -350,16 +571,22 @@ const Dashboard: React.FC = () => {
                 Peak Hours
               </h3>
               <div className="space-y-3">
-                {botMetrics.peakHours.map((hour, index) => (
-                  <div key={index} className="flex justify-between items-center">
-                    <span className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {`${hour.hour}:00 - ${hour.hour}:59`}
-                    </span>
-                    <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {hour.bookings} bookings
-                    </span>
-                  </div>
-                ))}
+                {botMetrics.peakHours.length > 0 ? (
+                  botMetrics.peakHours.map((hour, index) => (
+                    <div key={index} className="flex justify-between items-center">
+                      <span className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {`${hour.hour}:00 - ${hour.hour}:59`}
+                      </span>
+                      <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {hour.bookings} bookings
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className={`text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    No peak hour data available yet
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -371,7 +598,7 @@ const Dashboard: React.FC = () => {
         <h2 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
           Today's Appointments
         </h2>
-        {appointments.length === 0 ? (
+        {todayAppointments.length === 0 ? (
           <p className={`text-center py-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
             No appointments scheduled for today
           </p>
@@ -395,7 +622,7 @@ const Dashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'}`}>
-                {appointments.map((appointment) => (
+                {todayAppointments.map((appointment) => (
                   <tr key={appointment.id}>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                       theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
@@ -410,16 +637,12 @@ const Dashboard: React.FC = () => {
                     <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                       theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
                     }`}>
-                      {new Date(appointment.datetime).toLocaleTimeString()}
+                      {appointment.time}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        appointment.status === 'confirmed'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {appointment.status}
-                      </span>
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
+                    }`}>
+                      {appointment.status}
                     </td>
                   </tr>
                 ))}
@@ -476,8 +699,9 @@ const Dashboard: React.FC = () => {
             ) : documents.length === 0 ? (
               <div className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                 <span className="text-4xl">📄</span>
-                <p className="text-sm mt-4">No documents uploaded yet.</p>
-                <p className="text-sm mt-2">Upload documents to enhance your chatbot's knowledge.</p>
+                <p className="text-lg font-medium mt-4">Enhance your chatbot with knowledge</p>
+                <p className="text-sm mt-2 mb-4">Upload documents to train your chatbot with specific information about your services.</p>
+                <p className="text-sm">Supported formats: PDF, Word, and Text files</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4">
@@ -536,6 +760,17 @@ const Dashboard: React.FC = () => {
         return renderOverviewSection();
       case 'Documents':
         return renderDocumentsSection();
+      case 'Content':
+        return <div className="py-6">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+            <h1 className={`text-2xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              Content Management
+            </h1>
+            <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+              Redirecting to content dashboard...
+            </p>
+          </div>
+        </div>;
       case 'Calendar':
         return <CalendarIntegration />;
       case 'Staff':
@@ -548,6 +783,73 @@ const Dashboard: React.FC = () => {
         return renderOverviewSection();
     }
   };
+
+  // Effect to handle navigation to content dashboard
+  useEffect(() => {
+    const currentNav = navigation.find(item => item.current);
+    if (currentNav?.name === 'Content') {
+      navigate('/admin/content');
+    }
+  }, [navigation, navigate]);
+
+  // Debug function to check token format
+  const debugToken = () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error('DEBUG: No token found in localStorage');
+      return;
+    }
+    
+    console.log('DEBUG: Raw token:', token);
+    
+    // Verify token is in correct JWT format
+    try {
+      const tokenParts = token.split('.');
+      if (tokenParts.length !== 3) {
+        console.error('DEBUG: Invalid JWT format - should have 3 parts separated by dots');
+        return;
+      }
+      
+      // Log each part
+      console.log('DEBUG: Token header:', tokenParts[0]);
+      console.log('DEBUG: Token payload (encoded):', tokenParts[1]);
+      console.log('DEBUG: Token signature:', tokenParts[2]);
+      
+      // Decode payload
+      try {
+        const payload = JSON.parse(atob(tokenParts[1]));
+        console.log('DEBUG: Decoded payload:', payload);
+        
+        // Check for critical JWT claims
+        console.log('DEBUG: Token subject:', payload.sub);
+        console.log('DEBUG: Token issued at:', new Date(payload.iat * 1000).toLocaleString());
+        console.log('DEBUG: Token expiration:', new Date(payload.exp * 1000).toLocaleString());
+        console.log('DEBUG: Token role:', payload.role);
+        console.log('DEBUG: Token user_id:', payload.user_id);
+        
+        // Check if token has expired
+        const now = new Date();
+        const expiry = new Date(payload.exp * 1000);
+        if (expiry < now) {
+          console.error(`DEBUG: TOKEN EXPIRED! Expired at ${expiry.toLocaleString()}, current time is ${now.toLocaleString()}`);
+        } else {
+          console.log(`DEBUG: Token is valid. Expires at ${expiry.toLocaleString()}, current time is ${now.toLocaleString()}`);
+        }
+      } catch (e) {
+        console.error('DEBUG: Error decoding payload:', e);
+      }
+    } catch (e) {
+      console.error('DEBUG: Error parsing token:', e);
+    }
+    
+    // Check current Authorization header
+    console.log('DEBUG: Current Authorization header:', axios.defaults.headers.common['Authorization']);
+  };
+  
+  // Call debug function on mount
+  useEffect(() => {
+    debugToken();
+  }, []);
 
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-dark-400' : 'bg-gray-100'}`}>
@@ -604,4 +906,4 @@ const Dashboard: React.FC = () => {
   );
 };
 
-export default Dashboard; 
+export default Dashboard;

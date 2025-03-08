@@ -13,10 +13,35 @@ const Register: React.FC = () => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [emailError, setEmailError] = useState('');
+
+  // Email validation function
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return emailRegex.test(email);
+  };
+
+  // Handle email change with validation
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newEmail = e.target.value;
+    setFormData({ ...formData, email: newEmail });
+    
+    if (newEmail && !validateEmail(newEmail)) {
+      setEmailError('Please enter a valid email address (e.g., example@domain.com)');
+    } else {
+      setEmailError('');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Validate email format
+    if (!validateEmail(formData.email)) {
+      setError('Please enter a valid email address (e.g., example@domain.com)');
+      return;
+    }
 
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
@@ -31,18 +56,20 @@ const Register: React.FC = () => {
       });
       
       const result = await register(
+        formData.businessName,
         formData.email,
-        formData.password,
-        formData.businessName
+        formData.password
       );
       
-      console.log('Registration successful:', result);
+      console.log('Registration successful, full result:', result);
       
       // After successful registration, redirect to onboarding if required
       if (result.requiresOnboarding) {
+        console.log('Onboarding required, redirecting to /onboarding');
         localStorage.setItem('show_guided_tour', 'true');
-        navigate('/onboard');
+        navigate('/onboarding');
       } else {
+        console.log('No onboarding required, redirecting to /admin');
         navigate('/admin');
       }
     } catch (err: any) {
@@ -105,8 +132,11 @@ const Register: React.FC = () => {
                 className="appearance-none rounded-lg relative block w-full px-3 py-2 bg-dark-200 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#5F9EAD] focus:border-transparent"
                 placeholder="Email address"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={handleEmailChange}
               />
+              {emailError && (
+                <p className="mt-1 text-sm text-red-400">{emailError}</p>
+              )}
             </div>
             <div>
               <label htmlFor="password" className="sr-only">

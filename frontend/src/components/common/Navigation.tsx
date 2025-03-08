@@ -5,7 +5,6 @@ import { useTheme } from '../../contexts/ThemeContext';
 import {
   HomeIcon,
   BuildingOfficeIcon,
-  Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   MoonIcon,
   SunIcon,
@@ -57,17 +56,6 @@ export const Navigation: React.FC = () => {
                     <HomeIcon className="h-5 w-5 mr-1" />
                     Dashboard
                   </Link>
-                  <Link
-                    to="/admin/spa/settings"
-                    className={`${
-                      isActive('/admin/spa/settings')
-                        ? `border-primary-500 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`
-                        : `border-transparent ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'} hover:border-gray-300 hover:text-gray-700`
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                  >
-                    <Cog6ToothIcon className="h-5 w-5 mr-1" />
-                    Settings
-                  </Link>
                 </>
               )}
             </div>
@@ -92,7 +80,7 @@ export const Navigation: React.FC = () => {
                   )}
                 </button>
                 <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {user?.email}
+                  {user?.businessName || user?.email}
                 </span>
                 <button
                   onClick={() => logout()}
@@ -166,23 +154,13 @@ export const Navigation: React.FC = () => {
               >
                 Dashboard
               </Link>
-              <Link
-                to="/admin/spa/settings"
-                className={`${
-                  isActive('/admin/spa/settings')
-                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
-                    : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
-              >
-                Settings
-              </Link>
             </>
           )}
         </div>
         <div className="pt-4 pb-3 border-t border-gray-200">
           <div className="flex items-center px-4">
             <div className="ml-3">
-              <div className="text-sm font-medium text-gray-500">{user?.email}</div>
+              <div className="text-sm font-medium text-gray-500">{user?.businessName || user?.email}</div>
             </div>
           </div>
           <div className="mt-3 space-y-1">

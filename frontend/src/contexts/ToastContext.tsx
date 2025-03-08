@@ -26,6 +26,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const showToast = useCallback(({ title, description, type }: Omit<Toast, 'id'>) => {
+    // Skip error toasts with 'Failed to load' for new accounts
+    if (type === 'error' && title.includes('Failed to load')) {
+      console.log('Suppressing error toast for new account:', title);
+      return; // Don't show these toasts at all
+    }
+    
     const id = Date.now();
     setToasts(prev => [...prev, { id, title, description, type }]);
 

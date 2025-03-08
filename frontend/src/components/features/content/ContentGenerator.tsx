@@ -255,12 +255,34 @@ const ContentGenerator = () => {
                 >
                   Content Brief
                 </label>
+                <div className="mb-2">
+                  <select
+                    className={`w-full px-4 py-2 rounded-lg border mb-2 ${
+                      theme === 'dark'
+                        ? 'bg-dark-400 border-dark-200 text-accent-cream'
+                        : 'bg-white border-gray-300 text-gray-900'
+                    } focus:outline-none focus:ring-2 focus:ring-primary-500`}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setContentPrompt(e.target.value);
+                      }
+                    }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Select a content idea or write your own...</option>
+                    <option value="Create a blog post about the top 5 benefits of hot stone massage for stress relief">Blog: Benefits of hot stone massage</option>
+                    <option value="Design a promotional post for our new aromatherapy package with a 15% discount for first-time clients">Social: Aromatherapy promotion</option>
+                    <option value="Write an email newsletter about our seasonal skincare tips for winter and our new organic facial treatments">Email: Winter skincare tips</option>
+                    <option value="Create a service showcase for our premium couples massage experience with details about the amenities and benefits">Service: Couples massage</option>
+                    <option value="Design a promotional video script highlighting our spa's tranquil environment and exclusive treatments">Video: Spa atmosphere</option>
+                  </select>
+                </div>
                 <textarea
                   id="prompt"
                   rows={4}
                   value={contentPrompt}
                   onChange={(e) => setContentPrompt(e.target.value)}
-                  placeholder="Describe what you want to create..."
+                  placeholder="Describe what you want to create... (e.g., 'Write a blog post about the benefits of regular massages' or 'Create an Instagram post promoting our new facial treatment')"
                   className={`w-full px-4 py-2 rounded-lg border ${
                     theme === 'dark'
                       ? 'bg-dark-400 border-dark-200 text-accent-cream placeholder-accent-cream/50'

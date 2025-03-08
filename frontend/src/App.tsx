@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { ToastProvider } from './contexts/ToastContext';
@@ -14,6 +14,13 @@ import Settings from './components/admin/Settings';
 import OnboardingFlow from './components/admin/OnboardingFlow';
 import { Navigation } from './components/common/Navigation';
 import LandingPage from './components/LandingPage';
+import IntegrationsDashboard from './components/admin/IntegrationsDashboard';
+
+// Import Content Features
+import ContentDashboard from './components/features/content/ContentDashboard';
+import ContentGenerator from './components/features/content/ContentGenerator';
+import ContentScheduler from './components/features/content/ContentScheduler';
+import ContentAnalytics from './components/features/content/ContentAnalytics';
 
 interface User {
   role: string;
@@ -90,6 +97,40 @@ const AppContent: React.FC = () => {
           }
         />
 
+        {/* Content Features */}
+        <Route
+          path="/admin/content"
+          element={
+            <ProtectedRoute requiredRole="spa_admin">
+              <ContentDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/content/generator"
+          element={
+            <ProtectedRoute requiredRole="spa_admin">
+              <ContentGenerator />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/content/scheduler"
+          element={
+            <ProtectedRoute requiredRole="spa_admin">
+              <ContentScheduler />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/content/analytics"
+          element={
+            <ProtectedRoute requiredRole="spa_admin">
+              <ContentAnalytics />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Staff Dashboard */}
         <Route
           path="/staff/dashboard"
@@ -114,6 +155,16 @@ const AppContent: React.FC = () => {
           element={
             <ProtectedRoute>
               <OnboardingFlow />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Integrations Dashboard */}
+        <Route
+          path="/admin/integrations"
+          element={
+            <ProtectedRoute requiredRole="spa_admin">
+              <IntegrationsDashboard />
             </ProtectedRoute>
           }
         />
@@ -145,15 +196,13 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <Router>
-      <ThemeProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <AppContent />
-          </AuthProvider>
-        </ToastProvider>
-      </ThemeProvider>
-    </Router>
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 };
 

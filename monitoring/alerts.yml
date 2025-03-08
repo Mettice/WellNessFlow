@@ -1,0 +1,47 @@
+groups:
+  - name: spa_api_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: api_error_rate > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is above 5% for more than 5 minutes (current value: {{ $value }})"
+          
+      - alert: CriticalErrorRate
+        expr: api_error_rate > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical API error rate"
+          description: "API error rate is above 10% for more than 2 minutes (current value: {{ $value }})"
+          
+      - alert: SlowEndpoint
+        expr: api_endpoint_avg_time > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow API endpoint detected"
+          description: "Endpoint {{ $labels.endpoint }} has average response time > 1s for more than 5 minutes (current value: {{ $value }}s)"
+          
+      - alert: EndpointDown
+        expr: rate(api_endpoint_requests[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API endpoint may be down"
+          description: "No requests to endpoint {{ $labels.endpoint }} in the last 5 minutes"
+          
+      - alert: HighRequestRate
+        expr: sum(rate(api_total_requests[1m])) > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API request rate"
+          description: "API is receiving more than 100 requests per minute for more than 2 minutes (current value: {{ $value }} req/min)" 

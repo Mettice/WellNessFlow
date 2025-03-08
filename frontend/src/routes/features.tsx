@@ -8,7 +8,6 @@ import ContentScheduler from '../components/features/content/ContentScheduler';
 import ContentAnalytics from '../components/features/content/ContentAnalytics';
 
 // Chatbot Features
-import ChatbotDashboard from '../components/features/chatbot/ChatbotDashboard';
 import ChatbotIntegrations from '../components/features/chatbot/ChatbotIntegrations';
 
 // Data Features
@@ -24,7 +23,6 @@ const FeatureRoutes = () => {
       <Route path="content/analytics" element={<ContentAnalytics />} />
       
       {/* Chatbot Routes */}
-      <Route path="chatbot" element={<ChatbotDashboard />} />
       <Route path="chatbot/integrations" element={<ChatbotIntegrations />} />
       
       {/* Data Routes */}

@@ -33,15 +33,19 @@ const StaffManagement: React.FC = () => {
   }, []);
 
   const fetchStaff = async () => {
+    setLoading(true);
     try {
       const response = await axios.get('/api/admin/staff');
       setStaff(response.data);
     } catch (error) {
-      console.error('Error fetching staff:', error);
-      showToast({
-        title: 'Failed to load staff members',
-        type: 'error'
-      });
+      console.error('Error fetching staff members:', error);
+      // Don't show error toast for 404 responses (new accounts)
+      if (axios.isAxiosError(error) && error.response && error.response.status !== 404) {
+        showToast({ 
+          title: 'Failed to load staff members',
+          type: 'error'
+        });
+      }
     } finally {
       setLoading(false);
     }

@@ -2,7 +2,7 @@ from openai import OpenAI
 from typing import Optional, List, Dict
 from datetime import datetime
 import os
-from models.database import SessionLocal, SpaService, Embedding, Document, DocumentChunk, SpaProfile, BrandSettings
+from models.database import SessionLocal, SpaService, Document, DocumentChunk, SpaProfile, BrandSettings
 from sqlalchemy import func
 import numpy as np
 from ..rag.embeddings import generate_embeddings
@@ -267,3 +267,20 @@ async def extract_service_type(message: str, conversation_history: list) -> Opti
         return service_type if service_type != "none" else None
     except:
         return None 
+
+async def get_upsell_suggestions(spa_id: str, service_type: str, conversation_history: list) -> list:
+    """Get personalized upsell suggestions based on conversation context."""
+    try:
+        # Extract customer preferences from conversation
+        upsell_service = UpsellService(spa_id)
+        
+        # Get upsell recommendations
+        recommendations = await upsell_service.get_personalized_upsell(
+            service_type=service_type,
+            customer_history=conversation_history
+        )
+        
+        return recommendations
+    except Exception as e:
+        print(f"Error getting upsell suggestions: {str(e)}")
+        return [] 

@@ -6,10 +6,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from models.database import Document, DocumentChunk, SessionLocal
 from .embeddings import generate_embeddings
 import os
-import tempfile
 import re
 from dotenv import load_dotenv
-import threading
 import traceback
 
 

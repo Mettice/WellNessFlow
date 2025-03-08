@@ -1,6 +1,5 @@
 import os
 import sys
-from werkzeug.security import generate_password_hash
 from datetime import datetime
 
 # Add the parent directory to the Python path

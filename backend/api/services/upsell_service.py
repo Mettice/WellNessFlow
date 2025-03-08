@@ -1,8 +1,7 @@
 from typing import Dict, List, Optional
 import openai
 from datetime import datetime
-from models.database import SessionLocal, SpaService, SpaProfile, BrandSettings, Document
-from sqlalchemy import and_
+from models.database import SessionLocal, SpaProfile, BrandSettings, Document, SpaService
 
 class UpsellService:
     def __init__(self, spa_id: str = None):
@@ -12,7 +11,7 @@ class UpsellService:
     def __del__(self):
         self.db.close()
 
-    def _get_spa_context(self) -> str:
+    def get_spa_context(self) -> str:
         """Get relevant spa context from documents and profile."""
         try:
             # Get spa profile and brand settings
@@ -55,25 +54,44 @@ class UpsellService:
     ) -> List[Dict]:
         """Get personalized upsell recommendations based on service type and customer history."""
         try:
-            # Get base service options from brand settings
-            brand_settings = self.db.query(BrandSettings).filter_by(spa_id=self.spa_id).first()
+            # Get add-on services from the database
+            add_on_services = self.db.query(SpaService).filter_by(
+                spa_id=self.spa_id,
+                service_type='add-on',
+                parent_type=service_type
+            ).all()
+            
             base_options = []
             
-            if brand_settings and brand_settings.services:
-                for service in brand_settings.services:
-                    if service.get('type') == 'add-on' and service.get('parent_type') == service_type:
-                        base_options.append({
-                            'name': service.get('name'),
-                            'description': service.get('description'),
-                            'price': service.get('price'),
-                            'duration': service.get('duration')
-                        })
+            # Convert SpaService objects to dictionaries
+            for service in add_on_services:
+                base_options.append({
+                    'name': service.name,
+                    'description': service.description,
+                    'price': service.price,
+                    'duration': service.duration
+                })
+            
+            # Fallback to brand settings if no services found in the database
+            if not base_options:
+                # Get base service options from brand settings
+                brand_settings = self.db.query(BrandSettings).filter_by(spa_id=self.spa_id).first()
+                
+                if brand_settings and brand_settings.services:
+                    for service in brand_settings.services:
+                        if service.get('type') == 'add-on' and service.get('parent_type') == service_type:
+                            base_options.append({
+                                'name': service.get('name'),
+                                'description': service.get('description'),
+                                'price': service.get('price'),
+                                'duration': service.get('duration')
+                            })
 
             if not base_options:
                 return []
 
             # Get spa context for better personalization
-            spa_context = self._get_spa_context()
+            spa_context = self.get_spa_context()
 
             # If we have customer history, use OpenAI to personalize suggestions
             if customer_history:

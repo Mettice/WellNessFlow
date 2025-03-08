@@ -6,6 +6,8 @@ import hmac
 import hashlib
 import json
 from models.database import SessionLocal, Appointment
+from ..chatbot.openai_api import generate_response
+
 
 webhook_bp = Blueprint('webhooks', __name__, url_prefix='/webhooks')
 
@@ -84,7 +86,7 @@ def send_appointment_confirmation(appointment):
             requests.post(webhook_url, json={
                 'type': 'sms.send',
                 'phone': appointment.client_phone,
-                'message': f"Hi {appointment.client_name}! Your appointment at Serenity Spa is confirmed for {appointment.datetime.strftime('%B %d at %I:%M %p')}. Reply YES to confirm or NO to cancel."
+                'message': f"Hi {appointment.client_name}! Your appointment at Serenity Spa is confirmed for {appointment.appointment_datetime.strftime('%B %d at %I:%M %p')}. Reply YES to confirm or NO to cancel."
             })
     except Exception as e:
         print(f"Error sending SMS: {e}")
@@ -97,7 +99,7 @@ def send_cancellation_notification(appointment):
             requests.post(webhook_url, json={
                 'type': 'sms.send',
                 'phone': appointment.client_phone,
-                'message': f"Hi {appointment.client_name}, your appointment at Serenity Spa for {appointment.datetime.strftime('%B %d at %I:%M %p')} has been cancelled. Please call us to reschedule."
+                'message': f"Hi {appointment.client_name}, your appointment at Serenity Spa for {appointment.appointment_datetime.strftime('%B %d at %I:%M %p')} has been cancelled. Please call us to reschedule."
             })
     except Exception as e:
         print(f"Error sending cancellation SMS: {e}")

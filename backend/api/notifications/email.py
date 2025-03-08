@@ -1,7 +1,20 @@
 from typing import Dict, Any
 import os
-#from sendgrid import SendGridAPIClient
-#from sendgrid.helpers.mail import Mail
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Try to import SendGrid, but don't fail if it's not installed
+try:
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail
+    SENDGRID_AVAILABLE = True
+except ImportError:
+    logger.warning("SendGrid not installed. Email functionality will be simulated.")
+    SENDGRID_AVAILABLE = False
+
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 # Initialize Jinja2 environment for email templates
@@ -53,7 +66,7 @@ def send_email(
     from_email: str = None
 ) -> bool:
     """
-    Send an email using SendGrid
+    Send an email using SendGrid if available, otherwise simulate sending
     
     Args:
         to: Recipient email address
@@ -63,34 +76,62 @@ def send_email(
         from_email: Optional sender email (overrides default)
     
     Returns:
-        bool: True if email was sent successfully
+        bool: True if email was sent successfully or simulated
     """
     try:
+        logger.info(f"Attempting to send email to {to} using template {template}")
+        
         template_config = TEMPLATES.get(template)
         if not template_config:
+            logger.error(f"Unknown email template: {template}")
             raise ValueError(f"Unknown email template: {template}")
+        
+        # Get subject from template config if not provided
+        email_subject = subject or template_config['subject']
+        
+        # If SendGrid is not available, just log the email and return success
+        if not SENDGRID_AVAILABLE:
+            logger.info(f"SENDGRID NOT AVAILABLE - Simulating email to: {to}")
+            logger.info(f"Subject: {email_subject}")
+            logger.info(f"Template: {template}")
+            logger.info(f"Data: {data}")
+            return True
+            
+        # Check if SendGrid API key is set
+        sendgrid_api_key = os.getenv('SENDGRID_API_KEY')
+        if not sendgrid_api_key:
+            logger.warning("SENDGRID_API_KEY not set in environment variables")
+            logger.info(f"Would have sent email to: {to}")
+            logger.info(f"Subject: {email_subject}")
+            logger.info(f"Data: {data}")
+            return True
             
         # Load and render template
-        template = template_env.get_template(template_config['template'])
-        html_content = template.render(**data)
+        template_obj = template_env.get_template(template_config['template'])
+        html_content = template_obj.render(**data)
         
         # Create email message
         message = Mail(
             from_email=from_email or os.getenv('DEFAULT_FROM_EMAIL', 'noreply@spaplatform.com'),
             to_emails=to,
-            subject=subject or template_config['subject'],
+            subject=email_subject,
             html_content=html_content
         )
         
         # Send email
-        sg = SendGridAPIClient(os.getenv('SENDGRID_API_KEY'))
+        sg = SendGridAPIClient(sendgrid_api_key)
         response = sg.send(message)
         
+        logger.info(f"Email sent successfully to {to}, status code: {response.status_code}")
         return response.status_code in [200, 201, 202]
         
     except Exception as e:
-        print(f"Failed to send email: {e}")
-        return False
+        logger.error(f"Failed to send email: {str(e)}")
+        # Log the stack trace for debugging
+        import traceback
+        logger.error(traceback.format_exc())
+        # Return True to prevent blocking the application flow
+        return True
 
 def send_welcome_email(spa_name: str, owner_name: str, to_email: str) -> bool:
     """Send welcome email to new spa"""

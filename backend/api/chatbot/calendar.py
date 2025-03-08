@@ -136,4 +136,33 @@ class CalendarIntegration:
             return isinstance(response, list)
         except Exception as e:
             print(f"Custom calendar validation error: {str(e)}")
+            return False
+
+    def validate_simplybook(self, settings: Dict) -> bool:
+        """Validate SimplyBook.me credentials"""
+        try:
+            api_key = settings.get('api_key')
+            company_login = settings.get('company_login')
+            
+            if not api_key or not company_login:
+                raise ValueError("API key and company login are required for SimplyBook.me integration")
+
+            # Test the API key by making a simple request
+            auth_url = 'https://user-api.simplybook.me/login'
+            auth_response = requests.post(
+                auth_url,
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "getToken",
+                    "params": [company_login, api_key],
+                    "id": 1
+                }
+            )
+            
+            if auth_response.status_code != 200:
+                raise ValueError(f"SimplyBook.me authentication error: {auth_response.text}")
+            
+            return True
+        except Exception as e:
+            print(f"SimplyBook.me validation error: {str(e)}")
             return False 

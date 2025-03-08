@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, ForeignKey, Boolean, Text, Date
+from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, ForeignKey, Boolean, Text, Date, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import os
@@ -62,6 +62,9 @@ class Client(Base):
     # Add these new relationships
     profile = relationship("SpaProfile", back_populates="spa", uselist=False)
     brand_settings = relationship("BrandSettings", back_populates="spa", uselist=False)
+    
+    # Add relationship to conversations
+    conversations = relationship("ChatConversation", back_populates="spa")
 
 class User(Base):
     __tablename__ = "users"
@@ -78,17 +81,25 @@ class User(Base):
     
     # Relationship with Client (nullable for super_admin)
     spa = relationship("Client", backref="users")
+    
+    # Add relationship to conversations
+    conversations = relationship("ChatConversation", back_populates="user")
 
 class SpaService(Base):
     __tablename__ = "services"
 
     id = Column(Integer, primary_key=True, index=True)
+    spa_id = Column(String, index=True)
     name = Column(String, index=True)
     duration = Column(Float)
     price = Column(Float)
     description = Column(String)
     benefits = Column(JSON)
     contraindications = Column(JSON)
+    service_type = Column(String, default='regular')  # regular, add-on
+    parent_type = Column(String, nullable=True)  # For add-ons, references the main service type
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     appointments = relationship("Appointment", back_populates="service")
 
 class Document(Base):
@@ -129,11 +140,13 @@ class Appointment(Base):
     client_phone = Column(String)
     service_id = Column(Integer, ForeignKey("services.id"))
     location_id = Column(Integer, ForeignKey("locations.id"))
-    datetime = Column(DateTime, index=True)
+    appointment_datetime = Column(DateTime, index=True)
     status = Column(String)  # confirmed, cancelled, completed
     reminder_sent = Column(Boolean, default=False)
     feedback_sent = Column(Boolean, default=False)
     notes = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     service = relationship("SpaService", back_populates="appointments")
     location = relationship("Location", back_populates="appointments")
@@ -234,3 +247,35 @@ class PlatformMetrics(Base):
     metrics_date = Column(Date, unique=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ChatConversation(Base):
+    """Model to store chat conversations"""
+    __tablename__ = "chat_conversations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, index=True, nullable=False)
+    spa_id = Column(String, ForeignKey("clients.spa_id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    client_email = Column(String, nullable=True)
+    client_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan")
+    spa = relationship("Client", back_populates="conversations")
+    user = relationship("User", back_populates="conversations")
+
+class ChatMessage(Base):
+    """Model to store individual chat messages"""
+    __tablename__ = "chat_messages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("chat_conversations.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    is_user = Column(Boolean, default=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    message_metadata = Column(JSON, nullable=True)  # Renamed from 'metadata' to 'message_metadata'
+    
+    # Relationships
+    conversation = relationship("ChatConversation", back_populates="messages")

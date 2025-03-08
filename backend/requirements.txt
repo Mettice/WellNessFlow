@@ -21,4 +21,5 @@ langchain-community==0.3.18
 langchain-openai==0.3.7
 werkzeug==3.0.1
 google-api-python-client==2.120.0
+cryptography==42.0.5
 

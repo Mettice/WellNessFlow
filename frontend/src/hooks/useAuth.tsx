@@ -17,6 +17,7 @@ interface AuthResponse {
     current_step: number;
     total_steps: number;
   };
+  requiresOnboarding?: boolean; // Keep for backward compatibility
 }
 
 interface AuthContextType {
@@ -35,30 +36,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Simple, consistent token validation
+  const isValidToken = (token: string): boolean => {
+    return Boolean(token && token.split('.').length === 3);
+  };
+
   // Helper function to set up auth header for all service calls
   const setupAuthHeaderForServiceCalls = (token: string | null) => {
-    if (token) {
-      // Clean the token - remove any whitespace, quotes, etc.
-      let cleanToken = token.trim();
-      // Remove quotes if present
-      if ((cleanToken.startsWith('"') && cleanToken.endsWith('"')) || 
-          (cleanToken.startsWith("'") && cleanToken.endsWith("'"))) {
-        cleanToken = cleanToken.substring(1, cleanToken.length - 1);
-      }
-      
-      // Verify it's a well-formed JWT (three parts separated by dots)
-      const parts = cleanToken.split('.');
-      if (parts.length !== 3) {
-        console.error('Invalid token format - not setting Authorization header');
-        return;
-      }
-      
-      console.log('Setting up Authorization header with token');
-      axios.defaults.headers.common['Authorization'] = `Bearer ${cleanToken}`;
-      // Double check it was set correctly
-      console.log('Auth header is now:', axios.defaults.headers.common['Authorization']);
+    if (token && isValidToken(token)) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     } else {
-      console.log('Removing Authorization header');
       delete axios.defaults.headers.common['Authorization'];
     }
   };
@@ -68,13 +55,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const token = localStorage.getItem('token');
     
     // Set default authorization header if token exists
-    if (token) {
+    if (token && isValidToken(token)) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
-
-    // NOTE: We no longer need a separate interceptor here
-    // The global interceptor in main.tsx handles all request modifications
-    // This prevents conflicts between multiple interceptors
 
     // Check authentication status on mount
     checkAuth();
@@ -87,24 +70,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Add a function to check token validity for API calls
   const ensureTokenValidity = async () => {
     const token = localStorage.getItem('token');
-    if (!token) {
-      console.warn('No token found in localStorage');
+    if (!token || !isValidToken(token)) {
       return false;
     }
 
     // Make sure token is set in axios defaults
     const authHeader = axios.defaults.headers.common['Authorization'];
     if (!authHeader || (typeof authHeader === 'string' && !authHeader.includes(token))) {
-      console.log('Setting token in axios defaults');
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    }
-    
-    // Check if we need to refresh user data
-    if (user && user.role === 'super_admin') {
-      console.log('User is super_admin, ensuring role is preserved in requests');
-      
-      // For additional debugging, log the current headers
-      console.log('Current axios headers:', axios.defaults.headers.common);
     }
     
     return true;
@@ -116,76 +89,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Get token from localStorage
       const token = localStorage.getItem('token');
       
-      if (!token) {
-        console.log('No token found, user is not authenticated');
+      if (!token || !isValidToken(token)) {
         setUser(null);
         setLoading(false);
         return;
       }
       
-      // Basic check: Is the token a valid JWT format?
-      const tokenParts = token.split('.');
-      if (tokenParts.length !== 3) {
-        console.error('Invalid token format - not a valid JWT');
-        localStorage.removeItem('token');
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-      
-      // Set up auth header for subsequent service calls
+      // Set up auth header
       setupAuthHeaderForServiceCalls(token);
       
-      // Try to get user data from localStorage
-      const userData = localStorage.getItem('user');
-      
-      if (!userData) {
-        console.warn('No user data found in localStorage');
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-      
       try {
-        // Parse user data
-        const parsedUser = JSON.parse(userData);
-        
-        // Handle spa_id consistently
-        // 1. First try from user object
-        let spa_id = parsedUser.spa_id;
-        
-        // 2. If not found, try from token
-        if (!spa_id) {
+        // Try to get user data from API
+        const response = await axios.get('/api/auth/me');
+        setUser(response.data);
+        localStorage.setItem('user', JSON.stringify(response.data));
+      } catch (e) {
+        // If API call fails, try to get user data from localStorage as fallback
+        const userData = localStorage.getItem('user');
+        if (userData) {
           try {
-            const payload = JSON.parse(atob(tokenParts[1]));
-            if (payload.spa_id) {
-              spa_id = payload.spa_id;
-              console.log("Using spa_id from token:", spa_id);
-            } else if (payload.sub) {
-              // 3. Use sub claim as last resort
-              spa_id = payload.sub;
-              console.log("Using sub claim as spa_id:", spa_id);
-            }
+            setUser(JSON.parse(userData));
           } catch (e) {
-            console.error("Error extracting spa_id from token:", e);
+            localStorage.removeItem('user');
+            setUser(null);
           }
         } else {
-          console.log("Using spa_id from user data:", spa_id);
+          setUser(null);
         }
-        
-        // Store spa_id for future use if found
-        if (spa_id) {
-          localStorage.setItem('spa_id', spa_id);
-          // No need to set headers here - global interceptor will handle that
-        } else {
-          console.warn("No spa_id found in user data or token - authentication issues may occur");
-        }
-        
-        // Set the user state
-        setUser(parsedUser);
-      } catch (e) {
-        console.error('Error parsing user data:', e);
-        setUser(null);
       }
       
       setLoading(false);
@@ -199,139 +129,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const login = async (email: string, password: string) => {
     try {
       setLoading(true);
-      console.log(`Attempting to log in with email: ${email}`);
       
-      // Get the API URL from environment or use the default
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      console.log(`Using API URL: ${apiUrl}/api/auth/login`);
-      
-      // Log the request details
-      const requestData = { email, password };
-      console.log('Login request data:', { email, password: '***' });
-      
-      // Use the absolute URL for the login request
-      const response = await fetch(`${apiUrl}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
+      // Use axios for a consistent API request format
+      const response = await axios.post<AuthResponse>('/api/auth/login', {
+        email,
+        password,
       });
       
-      console.log(`Login response status: ${response.status} ${response.statusText}`);
-      console.log('Login response headers:', Object.fromEntries([...response.headers.entries()]));
+      const { access_token, user } = response.data;
       
-      const responseText = await response.text();
-      console.log('Raw response text:', responseText.substring(0, 100) + (responseText.length > 100 ? '...' : ''));
-      
-      if (!response.ok) {
-        let errorMessage = 'Login failed';
-        try {
-          // Try to parse the response as JSON
-          const errorData = JSON.parse(responseText);
-          errorMessage = errorData.error || errorMessage;
-          console.error('Login error data:', errorData);
-        } catch (e) {
-          // If parsing fails, use the response text as the error message
-          console.error('Could not parse error response as JSON:', responseText);
-          errorMessage = responseText || `HTTP error ${response.status}`;
-        }
-        throw new Error(errorMessage);
-      }
-      
-      // Parse the response text as JSON
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (e) {
-        console.error('Error parsing response as JSON:', e);
-        throw new Error('Invalid response format from server');
-      }
-      
-      console.log('Login response data:', { 
-        ...data,
-        access_token: data.access_token ? `${data.access_token.substring(0, 20)}...` : undefined
-      });
-      
-      const { access_token, user } = data;
-      
-      if (!access_token) {
-        console.error('No access token received in response');
-        throw new Error('No access token received');
+      if (!access_token || !isValidToken(access_token)) {
+        throw new Error('Invalid token received');
       }
       
       if (!user) {
-        console.error('No user data received in response');
         throw new Error('No user data received');
       }
       
-      // Store token in localStorage first before setting headers
+      // Store token and user data
       localStorage.setItem('token', access_token);
-      console.log('Token stored in localStorage');
+      localStorage.setItem('user', JSON.stringify(user));
       
-      // Decode and log the token contents to debug
-      try {
-        const tokenParts = access_token.split('.');
-        if (tokenParts.length === 3) {
-          console.log('Token has valid structure with 3 parts');
-          const payload = JSON.parse(atob(tokenParts[1]));
-          
-          // Log ALL token claims to verify spa_id presence
-          console.log('Full token payload:', payload);
-          
-          // Specifically check for spa_id
-          if (payload.spa_id) {
-            console.log('SUCCESS: Token contains spa_id:', payload.spa_id);
-            
-            // Store the spa_id from token
-            localStorage.setItem('spa_id', payload.spa_id);
-            axios.defaults.headers.common['X-Spa-ID'] = payload.spa_id;
-          } else {
-            console.warn('WARNING: Token does NOT contain spa_id claim');
-            
-            // Fall back to user.spa_id if available
-            if (user.spa_id) {
-              console.log('Using spa_id from user object instead:', user.spa_id);
-              localStorage.setItem('spa_id', user.spa_id);
-              axios.defaults.headers.common['X-Spa-ID'] = user.spa_id;
-            } else {
-              console.error('CRITICAL: No spa_id available in token or user object');
-            }
-          }
-        } else {
-          console.error('Invalid token format - not 3 parts');
-        }
-      } catch (error) {
-        console.error('Error extracting spa_id from token:', error);
-      }
-      
-      // Set up auth header for subsequent service calls
+      // Set the authorization header for future requests
       setupAuthHeaderForServiceCalls(access_token);
-      
-      // Verify the token was set correctly by checking the header
-      console.log('Authorization header after login:', axios.defaults.headers.common['Authorization']);
-      
-      // Store user data in localStorage
-      if (user) {
-        localStorage.setItem('user', JSON.stringify(user));
-        console.log('User data stored in localStorage:', { 
-          id: user.id, 
-          email: user.email, 
-          role: user.role,
-          spa_id: user.spa_id
-        });
-      }
       
       // Update user state
       setUser(user);
-      console.log('User state updated - login successful');
     } catch (error: any) {
       console.error('Login failed:', error);
-      console.error('Error details:', {
-        message: error.message,
-        name: error.name,
-        stack: error.stack
-      });
       throw error;
     } finally {
       setLoading(false);
@@ -340,55 +165,48 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = async () => {
     try {
-      // Only attempt logout API call if we have a token
-      const token = localStorage.getItem('token');
-      if (token) {
-        try {
-          // Attempt to call logout API
-          await axios.post('/api/auth/logout');
-        } catch (error) {
-          console.error('Error during logout API call:', error);
-          // Continue with local logout even if API call fails
-        }
-      }
-    } finally {
-      // Clear local storage regardless of API call result
+      // Clear local storage
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      localStorage.removeItem('spa_id');
       
       // Clear axios headers
-      setupAuthHeaderForServiceCalls(null);
+      delete axios.defaults.headers.common['Authorization'];
       
       setUser(null);
-      console.log('User logged out successfully');
+    } catch (error) {
+      console.error('Logout error:', error);
     }
   };
 
   const register = async (businessName: string, email: string, password: string) => {
     try {
+      // Use consistent naming - use business_name as backend expects
       const response = await axios.post<AuthResponse>('/api/auth/register', {
-        businessName,
+        business_name: businessName, // Use backend expected parameter name
         email,
         password,
       });
       
-      // Extract data from response
-      const { access_token, user, onboarding } = response.data;
-      localStorage.setItem('token', access_token);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+      // Handle different response structures
+      const { access_token, user, onboarding, requiresOnboarding } = response.data;
       
-      // Add business name directly to user object from registration data
-      const userData = {
-        ...user,
-        businessName: businessName // Use the businessName provided during registration
-      };
+      if (access_token && isValidToken(access_token)) {
+        localStorage.setItem('token', access_token);
+        setupAuthHeaderForServiceCalls(access_token);
+      }
       
-      localStorage.setItem('user', JSON.stringify(userData));
-      setUser(userData);
+      if (user) {
+        localStorage.setItem('user', JSON.stringify(user));
+        setUser(user);
+      }
       
-      // Check if onboarding is required from the onboarding object
-      return { requiresOnboarding: onboarding?.required || false };
+      // Handle both onboarding formats
+      const needsOnboarding = 
+        (onboarding && onboarding.required) || 
+        requiresOnboarding || 
+        false;
+      
+      return { requiresOnboarding: needsOnboarding };
     } catch (error) {
       console.error('Registration failed:', error);
       throw error;

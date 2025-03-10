@@ -56,7 +56,7 @@ axios.interceptors.request.use(
       if (config.url && !config.url.includes('/auth/')) {
         try {
           const payload = JSON.parse(atob(token.split('.')[1]));
-          
+         
           // Check for user_id and role in the token
           if (payload.user_id) {
             console.log('Token contains user_id:', payload.user_id);

@@ -83,153 +83,52 @@ const Dashboard: React.FC = () => {
     revenue_today: 0,
     upcoming_appointments: 0
   });
-  const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [appointments, setAppointments] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [todayAppointments, setTodayAppointments] = useState<any[]>([]);
 
+  // Setup axios interceptor to handle tokens and spa_id
   useEffect(() => {
-    verifyTokenOnMount();
-    fetchBotMetrics();
-    fetchDocuments();
-    fetchDailyMetrics();
+    // No longer needed - handled by global interceptor in main.tsx
+    
+    // Clean up interceptor on unmount
+    return () => {
+      // No cleanup needed
+    };
   }, []);
 
-  // Verify token on component mount
-  const verifyTokenOnMount = () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      console.error('No token found on Dashboard mount');
-      // Don't redirect automatically - just log the error
-      return;
-    }
+  // Initial data load
+  useEffect(() => {
+    // Fetch data based on current navigation
+    const currentNavItem = navigation.find(item => item.current);
+    const currentSection = currentNavItem ? currentNavItem.name : 'Overview';
     
-    // Verify token format
-    try {
-      const tokenParts = token.split('.');
-      if (tokenParts.length !== 3) {
-        console.error('Invalid token format');
-        // Don't redirect
-        return;
-      }
-      
-      // Decode token to check expiration
-      const payload = JSON.parse(atob(tokenParts[1]));
-      console.log('Dashboard: Token payload:', payload);
-      
-      // Check for token expiration
-      if (payload.exp) {
-        const expDate = new Date(payload.exp * 1000);
-        const now = new Date();
-        console.log(`Token expires: ${expDate.toLocaleString()}, Current time: ${now.toLocaleString()}`);
-        
-        if (expDate < now) {
-          console.warn('Token expired, but NOT auto-redirecting to login');
-          return;
-        }
-      }
-      
-      // Verify token has required claims
-      if (!payload.user_id || !payload.role) {
-        console.error('Token missing required claims');
-        // Don't redirect
-        return;
-      }
-      
-      // Ensure token is in Authorization header
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      console.log('Dashboard: Authorization header has been set');
-      
-    } catch (e) {
-      console.error('Error verifying token:', e);
-      // Don't redirect
+    if (currentSection === 'Overview') {
+      fetchDailyMetrics();
+      fetchBotMetrics();
+    } else if (currentSection === 'Documents') {
+      fetchDocuments();
     }
-  };
+  }, [navigation]);
 
   const fetchBotMetrics = async () => {
     try {
       console.log('Fetching bot metrics...');
       setLoadingMetrics(true);
       
-      // Check if token exists and is set in headers before making the request
-      const token = localStorage.getItem('token');
-      if (!token) {
-        console.error('No token available for API request');
-        setBotMetrics({
-          totalConversations: 0,
-          successfulBookings: 0,
-          averageResponseTime: '0s',
-          conversionRate: 0,
-          popularServices: [],
-          peakHours: []
-        });
-        setLoadingMetrics(false);
-        return;
-      }
-      
-      // Ensure Authorization header is set
-      if (!axios.defaults.headers.common['Authorization']) {
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        console.log('Setting Authorization header:', axios.defaults.headers.common['Authorization']);
-      }
-      
-      // Get the JWT payload to extract spa_id
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        console.log('JWT payload:', payload);
-        
-        // Check for spa_id in sub claim
-        if (payload.sub) {
-          console.log('Found spa_id in sub claim:', payload.sub);
-          
-          // Set X-Spa-ID header explicitly
-          axios.defaults.headers.common['X-Spa-ID'] = payload.sub;
-          console.log('Set X-Spa-ID header:', axios.defaults.headers.common['X-Spa-ID']);
-        } else {
-          console.warn('No spa_id found in JWT sub claim');
-        }
-      } catch (e) {
-        console.error('Error parsing JWT token:', e);
-      }
-      
       // Make the API request
-      console.log('Making bot metrics API request with headers:', axios.defaults.headers.common);
       const response = await axios.get('/api/admin/bot-metrics');
-      console.log('Bot metrics response:', response);
-      
-      // Check if we got a valid response with data
-      if (response.data && typeof response.data === 'object') {
-        console.log('Received valid bot metrics data:', response.data);
-        setBotMetrics(response.data);
-      } else {
-        // Handle empty response by setting default values
-        console.warn('Empty response received for bot metrics');
-        setBotMetrics({
-          totalConversations: 0,
-          successfulBookings: 0,
-          averageResponseTime: '0s',
-          conversionRate: 0,
-          popularServices: [],
-          peakHours: []
-        });
-      }
-    } catch (error: any) {
+      setBotMetrics(response.data);
+    } catch (error) {
       console.error('Error fetching bot metrics:', error);
-      
-      // Log detailed error information
-      if (error.response) {
-        console.error(`API Error: ${error.response.status} - ${error.response.statusText}`);
-        console.error('Error data:', error.response.data);
-      } else if (error.request) {
-        console.error('No response received from server');
-      } else {
-        console.error('Error setting up request:', error.message);
-      }
+      showToast({ 
+        title: 'Failed to load metrics',
+        type: 'error'
+      });
       
       // Set default values instead of showing error for new users
       setBotMetrics({
@@ -298,49 +197,19 @@ const Dashboard: React.FC = () => {
     try {
       setLoadingMetrics(true);
       
-      // Get spa_id from localStorage
-      const spa_id = localStorage.getItem('spa_id');
-      if (!spa_id) {
-        console.error('No spa_id available for API request');
-        setDailyMetrics({
-          total_appointments: 0,
-          completed_appointments: 0,
-          revenue_today: 0,
-          upcoming_appointments: 0
-        });
-        setTodayAppointments([]);
-        setLoadingMetrics(false);
-        return;
-      }
+      const [metricsRes, appointmentsRes] = await Promise.all([
+        axios.get('/api/admin/metrics/daily'),
+        axios.get('/api/admin/appointments/today')
+      ]);
       
-      // Let the interceptor handle adding spa_id to the URL
-      const metricsResponse = await axios.get('/api/admin/metrics/daily');
-      
-      const defaultMetrics = {
-        total_appointments: 0,
-        completed_appointments: 0,
-        revenue_today: 0,
-        upcoming_appointments: 0
-      };
-      
-      // If we get valid data, use it
-      if (metricsResponse.data) {
-        setDailyMetrics(metricsResponse.data);
-      } else {
-        setDailyMetrics(defaultMetrics);
-      }
-      
-      // Let the interceptor handle adding spa_id to the URL
-      const appointmentsResponse = await axios.get('/api/admin/appointments/today');
-      
-      // If we get valid appointment data, use it
-      if (appointmentsResponse.data && Array.isArray(appointmentsResponse.data)) {
-        setTodayAppointments(appointmentsResponse.data);
-      } else {
-        setTodayAppointments([]);
-      }
+      setDailyMetrics(metricsRes.data);
+      setTodayAppointments(appointmentsRes.data);
     } catch (error) {
       console.error('Error fetching daily metrics:', error);
+      showToast({
+        title: 'Failed to load daily metrics',
+        type: 'error'
+      });
       
       // Set default data on error
       setDailyMetrics({
@@ -497,7 +366,7 @@ const Dashboard: React.FC = () => {
           Bot Performance
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {loading ? (
+          {loadingMetrics ? (
             <div className="col-span-3 text-center py-4">Loading metrics...</div>
           ) : (
             <>
@@ -538,7 +407,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Popular Services and Peak Hours */}
-        {!loading && (
+        {!loadingMetrics && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
             {/* Popular Services */}
             <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
@@ -791,65 +660,6 @@ const Dashboard: React.FC = () => {
       navigate('/admin/content');
     }
   }, [navigation, navigate]);
-
-  // Debug function to check token format
-  const debugToken = () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      console.error('DEBUG: No token found in localStorage');
-      return;
-    }
-    
-    console.log('DEBUG: Raw token:', token);
-    
-    // Verify token is in correct JWT format
-    try {
-      const tokenParts = token.split('.');
-      if (tokenParts.length !== 3) {
-        console.error('DEBUG: Invalid JWT format - should have 3 parts separated by dots');
-        return;
-      }
-      
-      // Log each part
-      console.log('DEBUG: Token header:', tokenParts[0]);
-      console.log('DEBUG: Token payload (encoded):', tokenParts[1]);
-      console.log('DEBUG: Token signature:', tokenParts[2]);
-      
-      // Decode payload
-      try {
-        const payload = JSON.parse(atob(tokenParts[1]));
-        console.log('DEBUG: Decoded payload:', payload);
-        
-        // Check for critical JWT claims
-        console.log('DEBUG: Token subject:', payload.sub);
-        console.log('DEBUG: Token issued at:', new Date(payload.iat * 1000).toLocaleString());
-        console.log('DEBUG: Token expiration:', new Date(payload.exp * 1000).toLocaleString());
-        console.log('DEBUG: Token role:', payload.role);
-        console.log('DEBUG: Token user_id:', payload.user_id);
-        
-        // Check if token has expired
-        const now = new Date();
-        const expiry = new Date(payload.exp * 1000);
-        if (expiry < now) {
-          console.error(`DEBUG: TOKEN EXPIRED! Expired at ${expiry.toLocaleString()}, current time is ${now.toLocaleString()}`);
-        } else {
-          console.log(`DEBUG: Token is valid. Expires at ${expiry.toLocaleString()}, current time is ${now.toLocaleString()}`);
-        }
-      } catch (e) {
-        console.error('DEBUG: Error decoding payload:', e);
-      }
-    } catch (e) {
-      console.error('DEBUG: Error parsing token:', e);
-    }
-    
-    // Check current Authorization header
-    console.log('DEBUG: Current Authorization header:', axios.defaults.headers.common['Authorization']);
-  };
-  
-  // Call debug function on mount
-  useEffect(() => {
-    debugToken();
-  }, []);
 
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-dark-400' : 'bg-gray-100'}`}>

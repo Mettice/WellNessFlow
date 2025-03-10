@@ -72,25 +72,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
 
-    // Simple request interceptor to ensure token is included
-    const requestInterceptor = axios.interceptors.request.use(
-      (config) => {
-        const token = localStorage.getItem('token');
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      },
-      (error) => {
-        return Promise.reject(error);
-      }
-    );
+    // NOTE: We no longer need a separate interceptor here
+    // The global interceptor in main.tsx handles all request modifications
+    // This prevents conflicts between multiple interceptors
 
     // Check authentication status on mount
     checkAuth();
 
     return () => {
-      axios.interceptors.request.eject(requestInterceptor);
+      // No interceptor to clean up
     };
   }, []);
 
@@ -160,19 +150,35 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Parse user data
         const parsedUser = JSON.parse(userData);
         
-        // Extract spa_id from token and store it
-        try {
-          const payload = JSON.parse(atob(tokenParts[1]));
-          
-          // The spa_id is in the sub claim
-          if (payload.sub) {
-            console.log('Checking/storing spa_id from token sub claim:', payload.sub);
-            localStorage.setItem('spa_id', payload.sub);
-          } else {
-            console.warn('No sub claim found in token during auth check');
+        // Handle spa_id consistently
+        // 1. First try from user object
+        let spa_id = parsedUser.spa_id;
+        
+        // 2. If not found, try from token
+        if (!spa_id) {
+          try {
+            const payload = JSON.parse(atob(tokenParts[1]));
+            if (payload.spa_id) {
+              spa_id = payload.spa_id;
+              console.log("Using spa_id from token:", spa_id);
+            } else if (payload.sub) {
+              // 3. Use sub claim as last resort
+              spa_id = payload.sub;
+              console.log("Using sub claim as spa_id:", spa_id);
+            }
+          } catch (e) {
+            console.error("Error extracting spa_id from token:", e);
           }
-        } catch (error) {
-          console.error('Error extracting spa_id from token during auth check:', error);
+        } else {
+          console.log("Using spa_id from user data:", spa_id);
+        }
+        
+        // Store spa_id for future use if found
+        if (spa_id) {
+          localStorage.setItem('spa_id', spa_id);
+          // No need to set headers here - global interceptor will handle that
+        } else {
+          console.warn("No spa_id found in user data or token - authentication issues may occur");
         }
         
         // Set the user state
@@ -263,32 +269,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.setItem('token', access_token);
       console.log('Token stored in localStorage');
       
-      // Extract spa_id from token and store in localStorage
+      // Decode and log the token contents to debug
       try {
         const tokenParts = access_token.split('.');
         if (tokenParts.length === 3) {
           console.log('Token has valid structure with 3 parts');
           const payload = JSON.parse(atob(tokenParts[1]));
-          console.log('Decoded token payload:', { 
-            ...payload,
-            sub: payload.sub
-          });
           
-          // The spa_id is in the sub claim
-          if (payload.sub) {
-            console.log('Storing spa_id from token sub claim:', payload.sub);
-            localStorage.setItem('spa_id', payload.sub);
-          } else {
-            console.warn('No sub claim found in token - spa_id not stored');
-          }
+          // Log ALL token claims to verify spa_id presence
+          console.log('Full token payload:', payload);
           
-          // Also check for spa_id directly in claims
+          // Specifically check for spa_id
           if (payload.spa_id) {
-            console.log('Found spa_id directly in token claims:', payload.spa_id);
-            // Only update if different from sub
-            if (payload.spa_id !== payload.sub) {
-              console.warn('spa_id claim differs from sub claim - using spa_id claim');
-              localStorage.setItem('spa_id', payload.spa_id);
+            console.log('SUCCESS: Token contains spa_id:', payload.spa_id);
+            
+            // Store the spa_id from token
+            localStorage.setItem('spa_id', payload.spa_id);
+            axios.defaults.headers.common['X-Spa-ID'] = payload.spa_id;
+          } else {
+            console.warn('WARNING: Token does NOT contain spa_id claim');
+            
+            // Fall back to user.spa_id if available
+            if (user.spa_id) {
+              console.log('Using spa_id from user object instead:', user.spa_id);
+              localStorage.setItem('spa_id', user.spa_id);
+              axios.defaults.headers.common['X-Spa-ID'] = user.spa_id;
+            } else {
+              console.error('CRITICAL: No spa_id available in token or user object');
             }
           }
         } else {

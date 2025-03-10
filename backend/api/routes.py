@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, current_app, send_from_directory, Response
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt, get_jwt_identity, get_jwt_header
 from werkzeug.security import generate_password_hash, check_password_hash
 from .chatbot.openai_api import generate_response
@@ -28,33 +28,13 @@ import asyncio
 import re
 import jwt
 from monitoring import track_request_performance
+from sqlalchemy.exc import SQLAlchemyError
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
 # Initialize Stripe with YOUR platform's secret key
 stripe.api_key = os.getenv('STRIPE_PLATFORM_SECRET_KEY')
 
-# Helper function to get spa_id from various sources
-def get_spa_id_from_request():
-    """
-    Gets spa_id from JWT claims, sub claim, or X-Spa-ID header.
-    Returns spa_id if found, None otherwise.
-    """
-    # First check JWT claims (primary source)
-    claims = get_jwt()
-    spa_id = claims.get('spa_id')
-    
-    # If not in claims, check if it's in the sub claim (JWT identity)
-    if not spa_id and 'sub' in claims:
-        spa_id = claims.get('sub')
-    
-    # If still not found, check custom header (backup)
-    if not spa_id:
-        spa_id = request.headers.get('X-Spa-ID')
-        if spa_id:
-            print(f"Using spa_id from X-Spa-ID header: {spa_id}")
-    
-    return spa_id
 
 # Initialize Stripe with the spa's secret key
 def init_stripe(spa_id):
@@ -71,11 +51,7 @@ def init_stripe(spa_id):
 # Authentication endpoints
 @bp.route('/auth/login', methods=['POST'])
 def login():
-    print("\n=== Login Request Debug ===")
-    print(f"Request method: {request.method}")
-    print(f"Request headers: {dict(request.headers)}")
-    print(f"Request content type: {request.content_type}")
-    print(f"Request mimetype: {request.mimetype}")
+    
     
     try:
         data = request.get_json()
@@ -188,17 +164,18 @@ def login():
             additional_claims = {
                 "user_id": str(user.id),
                 "role": user.role,
-                "email": user.email
+                "email": user.email,
+                "spa_id": spa_id
             }
             
-            # Only add spa_id to claims if it exists
+            # Always add spa_id to claims if it exists
             if spa_id:
                 additional_claims["spa_id"] = spa_id
                 print(f"Added spa_id to token claims: {spa_id}")
             
             # Create the access token
             access_token = create_access_token(
-                identity=spa_id,  # Use spa_id as identity
+                identity=spa_id,  # Use spa_id as identity (in sub claim)
                 additional_claims=additional_claims,
                 expires_delta=timedelta(days=7)  # Extend token lifetime for testing
             )
@@ -252,35 +229,9 @@ def login():
 @jwt_required()
 def debug_token():
     """Debug endpoint to check JWT token contents"""
-    print("\n=== Debug Token Request ===")
-    
-    # Get identity and claims
-    identity = get_jwt_identity()
     claims = get_jwt()
     headers = get_jwt_header()
-    
-    print(f"JWT Identity: {identity}")
-    print(f"JWT Claims: {claims}")
-    print(f"JWT Headers: {headers}")
-    
-    # Get authorization header
-    auth_header = request.headers.get('Authorization', '')
-    print(f"Authorization Header: {auth_header[:15]}...")
-    
-    # Try to decode the token manually
-    if auth_header.startswith('Bearer '):
-        token = auth_header[7:]  # Remove 'Bearer ' prefix
-        try:
-            decoded = jwt.decode(
-                token, 
-                options={"verify_signature": False}
-            )
-            print(f"Manually decoded token: {decoded}")
-        except Exception as e:
-            print(f"Error decoding token: {str(e)}")
-    
     return jsonify({
-        'identity': identity,
         'claims': claims,
         'headers': headers
     })
@@ -289,14 +240,10 @@ def debug_token():
 @jwt_required()
 def get_current_user():
     """Get current authenticated user's information"""
-    spa_id = get_jwt_identity()
-    claims = get_jwt()
-    user_id = claims.get('user_id')
-    
+    user_id = get_jwt_identity()
     db = SessionLocal()
     try:
-        # Convert user_id to integer for database query
-        user = db.query(User).filter_by(id=int(user_id)).first()
+        user = db.query(User).filter_by(id=user_id).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
             
@@ -706,31 +653,20 @@ def health_check():
 @bp.route('/admin/bot-metrics', methods=['GET'])
 @jwt_required()
 def get_bot_metrics():
-    print("\n=== Bot Metrics Request Debug ===")
     try:
         db = SessionLocal()
         try:
-            # Get spa_id using the helper function and print for debugging
-            spa_id = get_spa_id_from_request()
-            print(f"Resolved spa_id: {spa_id}")
-            
-            # Debug all potential sources of spa_id
+            # Get claims from JWT
             claims = get_jwt()
-            print(f"JWT claims: {claims}")
-            print(f"JWT sub claim: {claims.get('sub')}")
-            print(f"JWT spa_id claim: {claims.get('spa_id')}")
-            print(f"X-Spa-ID header: {request.headers.get('X-Spa-ID')}")
+            spa_id = claims.get('spa_id')
             
             if not spa_id:
-                print("No spa_id found in any source, returning 401")
                 return jsonify({"error": "Unauthorized - No spa_id in token"}), 401
             
             # Get time range from query params (default to last 30 days)
             days = int(request.args.get('days', 30))
             start_date = datetime.now() - timedelta(days=days)
-            print(f"Querying with spa_id: {spa_id}, start_date: {start_date}")
             
-            # Rest of the function remains the same...
             # Get total conversations (all appointments)
             total_conversations = db.query(func.count(Appointment.id)).filter(
                 Appointment.spa_id == spa_id,
@@ -775,13 +711,13 @@ def get_bot_metrics():
             # Get peak booking hours with proper null handling
             peak_hours = []
             hours_query = db.query(
-                func.strftime('%H', Appointment.appointment_datetime).label('hour'),
+                func.strftime('%H', Appointment.datetime).label('hour'),
                 func.count(Appointment.id).label('booking_count')
             ).filter(
                 Appointment.spa_id == spa_id,
                 Appointment.created_at >= start_date
             ).group_by(
-                func.strftime('%H', Appointment.appointment_datetime)
+                func.strftime('%H', Appointment.datetime)
             ).order_by(
                 func.count(Appointment.id).desc()
             ).all()
@@ -795,7 +731,7 @@ def get_bot_metrics():
             avg_response_time = db.query(
                 func.avg(
                     func.julianday(Appointment.created_at) - 
-                    func.julianday(Appointment.appointment_datetime)
+                    func.julianday(Appointment.datetime)
                 ) * 24 * 60  # Convert to minutes
             ).filter(
                 Appointment.spa_id == spa_id,
@@ -804,18 +740,14 @@ def get_bot_metrics():
             
             avg_response_time_str = f"{round(avg_response_time, 1)} min"
             
-            # Prepare response data
-            response_data = {
+            return jsonify({
                 'totalConversations': total_conversations,
                 'successfulBookings': successful_bookings,
                 'averageResponseTime': avg_response_time_str,
                 'conversionRate': round(conversion_rate, 1),
                 'popularServices': popular_services or [],
                 'peakHours': peak_hours or []
-            }
-            
-            print(f"Returning bot metrics: {response_data}")
-            return jsonify(response_data)
+            })
             
         finally:
             db.close()
@@ -1086,7 +1018,10 @@ def start_onboarding():
         db.commit()
 
         # Generate access token
-        access_token = create_access_token(identity=spa_id)
+        access_token = create_access_token(
+            identity=spa_id,
+            additional_claims={"spa_id": spa_id}
+        )
 
         # Send welcome email
         send_welcome_email(
@@ -1107,146 +1042,36 @@ def start_onboarding():
     finally:
         db.close()
 
-@bp.route('/onboard/setup-services', methods=['POST'])
-@jwt_required()
-def setup_services():
-    """Setup initial spa services"""
-    print("\n=== Setup Services Debug ===")
-    
-    # Get spa_id from JWT claims
-    claims = get_jwt()
-    jwt_spa_id = claims.get('spa_id')
-    print(f"JWT claims: {claims}")
-    print(f"Spa ID from claims: {jwt_spa_id}")
-    
-    try:
-        data = request.json
-        print(f"Request data: {data}")
-        
-        # Get spa_id from request or JWT
-        spa_id = data.get('spa_id') or jwt_spa_id
-        services = data.get('services', [])
-        
-        print(f"Using spa_id: {spa_id}")
-        print(f"Services count: {len(services)}")
-        
-        if not spa_id:
-            print("Missing spa_id")
-            return jsonify({'error': 'Missing spa_id'}), 422
-            
-        if not services:
-            print("No services provided")
-            return jsonify({'error': 'No services provided'}), 422
-
-        db = SessionLocal()
-        try:
-            # Check if spa exists
-            client = db.query(Client).filter_by(spa_id=spa_id).first()
-            if not client:
-                print(f"No client found with spa_id: {spa_id}")
-                return jsonify({'error': f'No client found with spa_id: {spa_id}'}), 422
-            
-            # Get default services
-            default_services = db.query(SpaService).filter_by(spa_id=None).all()
-            print(f"Found {len(default_services)} default services")
-            
-            # Create spa-specific services
-            for service in services:
-                print(f"Processing service: {service.get('name')}")
-                
-                # Find matching default service if exists
-                default_service = next(
-                    (s for s in default_services if s.name == service.get('name')), 
-                    None
-                )
-                
-                # Ensure required fields have default values
-                new_service = SpaService(
-                    spa_id=spa_id,
-                    name=service.get('name', 'Unnamed Service'),
-                    duration=service.get('duration') or (default_service.duration if default_service else 60.0),
-                    price=service.get('price') or (default_service.price if default_service else 0.0),
-                    description=service.get('description') or (default_service.description if default_service else ''),
-                    benefits=service.get('benefits') or (default_service.benefits if default_service else []),
-                    contraindications=service.get('contraindications') or (default_service.contraindications if default_service else [])
-                )
-                db.add(new_service)
-                print(f"Added service: {new_service.name}")
-            
-            db.commit()
-            print("Services setup completed successfully")
-            return jsonify({'status': 'success', 'message': 'Services setup completed'})
-
-        except Exception as e:
-            print(f"Database error: {str(e)}")
-            db.rollback()
-            return jsonify({'error': f'Database error: {str(e)}'}), 500
-        finally:
-            db.close()
-
-    except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
 @bp.route('/onboard/setup-calendar', methods=['POST'])
 @jwt_required()
 def setup_calendar():
     """Setup calendar integration"""
-    print("\n=== Setup Calendar Debug ===")
-    
-    # Get spa_id from JWT claims
-    claims = get_jwt()
-    jwt_spa_id = claims.get('spa_id')
-    print(f"JWT claims: {claims}")
-    print(f"Spa ID from claims: {jwt_spa_id}")
-    
     try:
         data = request.json
-        print(f"Request data: {data}")
-        
-        # Get spa_id from request or JWT
-        spa_id = data.get('spa_id') or jwt_spa_id
-        calendar_type = data.get('calendar_type', 'none')
+        spa_id = data.get('spa_id')
+        calendar_type = data.get('calendar_type', 'make')
         calendar_settings = data.get('settings', {})
-        
-        print(f"Using spa_id: {spa_id}")
-        print(f"Calendar type: {calendar_type}")
-        print(f"Calendar settings: {calendar_settings}")
 
         if not spa_id:
-            print("Missing spa_id")
-            return jsonify({'error': 'Missing spa_id'}), 422
+            return jsonify({'error': 'Missing spa_id'}), 400
 
         db = SessionLocal()
         try:
             client = db.query(Client).filter_by(spa_id=spa_id).first()
             if not client:
-                print(f"No client found with spa_id: {spa_id}")
-                return jsonify({'error': f'No client found with spa_id: {spa_id}'}), 422
+                return jsonify({'error': 'Spa not found'}), 404
 
             client.calendar_type = calendar_type
             client.config['calendar_settings'] = calendar_settings
-            client.updated_at = datetime.utcnow()
-            
-            print(f"Updating client {client.name} with calendar type: {calendar_type}")
-            
+            client.updated_at = datetime.now()
+
             db.commit()
-            print("Calendar setup completed successfully")
             return jsonify({'status': 'success', 'message': 'Calendar setup completed'})
 
-        except Exception as e:
-            print(f"Database error: {str(e)}")
-            db.rollback()
-            return jsonify({'error': f'Database error: {str(e)}'}), 500
         finally:
             db.close()
 
     except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/admin/appointments', methods=['GET'])
@@ -1268,9 +1093,9 @@ def get_appointments():
         
         # Apply additional filters
         if filter_type == 'upcoming':
-            query = query.filter(Appointment.appointment_datetime >= datetime.utcnow())
+            query = query.filter(Appointment.datetime >= datetime.utcnow())
         elif filter_type == 'past':
-            query = query.filter(Appointment.appointment_datetime < datetime.utcnow())
+            query = query.filter(Appointment.datetime < datetime.utcnow())
         elif filter_type == 'cancelled':
             query = query.filter(Appointment.status == 'cancelled')
             
@@ -1281,7 +1106,7 @@ def get_appointments():
             'client_name': apt.client_name,
             'client_email': apt.client_email,
             'client_phone': apt.client_phone,
-            'datetime': apt.appointment_datetime.isoformat(),
+            'datetime': apt.datetime.isoformat(),
             'status': apt.status,
             'service': apt.service.name if apt.service else None,
             'location': apt.location.name if apt.location else None,
@@ -1294,47 +1119,67 @@ def get_appointments():
     finally:
         db.close()
 
+
 @bp.route('/documents', methods=['GET'])
 @jwt_required()
 def get_documents():
     """Get all documents for a spa"""
     print("\n=== Get Documents Debug ===")
     
-    # Use our helper function to get spa_id from JWT or header
-    spa_id = get_spa_id_from_request()
-    print(f"Resolved spa_id: {spa_id}")
-    print(f"Request headers: {dict(request.headers)}")
-    
-    if not spa_id:
-        print("No spa_id found in JWT claims or headers")
-        # Return empty list instead of error for new users
-        return jsonify([]), 200
-    
-    db = SessionLocal()
     try:
-        # Debug print to check if we can query the database
-        print(f"Attempting to fetch documents for spa_id: {spa_id}")
+        # Get spa_id from JWT claims
+        claims = get_jwt()
+        print(f"JWT claims: {claims}")
         
-        # Query documents
-        documents = db.query(Document).filter_by(spa_id=spa_id).all()
-        print(f"Found {len(documents)} documents")
+        # First check for spa_id in the claims
+        spa_id = claims.get('spa_id')
+        if not spa_id and 'sub' in claims:
+            # If not found, use the sub field as backup
+            spa_id = claims.get('sub')
+            print(f"Using spa_id from JWT sub claim: {spa_id}")
         
-        # Convert to list of dictionaries
-        docs_list = [{
-            'id': str(doc.id),
-            'name': doc.name,
-            'doc_type': doc.doc_type,
-            'uploaded_at': doc.uploaded_at.isoformat() if doc.uploaded_at else None,
-            'processed': doc.processed
-        } for doc in documents]
+        # Last resort - check header
+        if not spa_id:
+            spa_id = request.headers.get('X-Spa-ID')
+            if spa_id:
+                print(f"Using spa_id from X-Spa-ID header: {spa_id}")
         
-        return jsonify(docs_list)
+        print(f"Final resolved spa_id: {spa_id}")
+        
+        if not spa_id:
+            print("No spa_id found in any source, returning empty document list")
+            # Return empty list with success status
+            return jsonify({"documents": [], "message": "No spa_id found, returning empty document list"}), 200
+        
+        db = SessionLocal()
+        try:
+            # Debug print to check if we can query the database
+            print(f"Attempting to fetch documents for spa_id: {spa_id}")
+            
+            # Query documents
+            documents = db.query(Document).filter_by(spa_id=spa_id).all()
+            print(f"Found {len(documents)} documents")
+            
+            # Convert to list of dictionaries
+            docs_list = [{
+                'id': str(doc.id),
+                'name': doc.name,
+                'doc_type': doc.doc_type,
+                'uploaded_at': doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+                'processed': doc.processed
+            } for doc in documents]
+            
+            return jsonify(docs_list)
+        except Exception as e:
+            print(f"Error in get_documents: {str(e)}")
+            print(f"Full traceback: {traceback.format_exc()}")
+            return jsonify({"error": str(e)}), 500
+        finally:
+            db.close()
     except Exception as e:
         print(f"Error in get_documents: {str(e)}")
         print(f"Full traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
-    finally:
-        db.close()
 
 @bp.route('/documents/<int:doc_id>', methods=['DELETE'])
 @jwt_required()
@@ -1418,7 +1263,8 @@ def get_brand_settings():
 @jwt_required()
 def update_colors():
     """Update spa's brand colors"""
-    spa_id = get_jwt_identity()
+    claims = get_jwt()
+    spa_id = claims.get('spa_id')
     data = request.json
     
     db = SessionLocal()
@@ -1442,7 +1288,8 @@ def update_colors():
 @jwt_required()
 def upload_logo():
     """Upload spa's logo"""
-    spa_id = get_jwt_identity()
+    claims = get_jwt()
+    spa_id = claims.get('spa_id')
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
@@ -1485,7 +1332,8 @@ def upload_logo():
 @jwt_required()
 def get_profile():
     """Get spa profile information"""
-    spa_id = get_jwt_identity()
+    claims = get_jwt()
+    spa_id = claims.get('spa_id')
     
     db = SessionLocal()
     try:
@@ -1514,7 +1362,8 @@ def get_profile():
 @jwt_required()
 def update_profile():
     """Update spa profile"""
-    spa_id = get_jwt_identity()
+    claims = get_jwt()
+    spa_id = claims.get('spa_id')
     data = request.json
     
     db = SessionLocal()
@@ -1539,7 +1388,8 @@ def update_profile():
 @jwt_required()
 def get_onboarding_status():
     """Get spa's onboarding status"""
-    spa_id = get_jwt_identity()
+    claims = get_jwt()
+    spa_id = claims.get('spa_id')
     db = SessionLocal()
     try:
         profile = db.query(SpaProfile).filter_by(spa_id=spa_id).first()
@@ -2049,10 +1899,11 @@ def public_chat():
 @jwt_required()
 def get_business_profile():
     """Get spa's business profile"""
+    # Use the helper function to get spa_id instead of direct claims access
     claims = get_jwt()
     spa_id = claims.get('spa_id')
     if not spa_id:
-        return jsonify({'error': 'Invalid token'}), 401
+        return jsonify({'error': 'Invalid token - spa_id not found'}), 401
     
     db = SessionLocal()
     try:
@@ -2356,24 +2207,21 @@ def suspend_spa(spa_id):
 def get_daily_metrics():
     db = SessionLocal()
     try:
-        # Get spa_id using the helper function
-        spa_id = get_spa_id_from_request()
-        
-        # Get role from claims for logging
         claims = get_jwt()
-        role = claims.get('role')
+        spa_id = claims.get('spa_id')
         
-        if not spa_id:
-            return jsonify({"error": "Unauthorized - No spa_id in token"}), 401
 
+        if not spa_id:
+            return jsonify({"error": "Invalid token - spa_id not found"}), 401
+        
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
-        
-        # Get all appointments for today
+            
+         # Get all appointments for today
         appointments = db.query(Appointment).filter(
             Appointment.spa_id == spa_id,
-            Appointment.appointment_datetime >= today,
-            Appointment.appointment_datetime < tomorrow
+            Appointment.datetime >= today,
+            Appointment.datetime < tomorrow
         ).all()
         
         # Calculate metrics - safely handle empty case
@@ -2425,9 +2273,9 @@ def get_today_appointments():
         # Get all appointments for today
         appointments = db.query(Appointment).filter(
             Appointment.spa_id == spa_id,
-            Appointment.appointment_datetime >= today,
-            Appointment.appointment_datetime < tomorrow
-        ).order_by(Appointment.appointment_datetime.asc()).all()
+            Appointment.datetime >= today,
+            Appointment.datetime < tomorrow
+        ).order_by(Appointment.datetime.asc()).all()
         
         # Safely format response with extra null checks
         response = []
@@ -2835,7 +2683,8 @@ def get_upsell_recommendations():
 @jwt_required()
 def get_conversations():
     """Get all conversations for a spa"""
-    spa_id = get_jwt_identity()
+    claims = get_jwt()
+    spa_id = claims.get('spa_id')
     
     db = SessionLocal()
     try:
@@ -2862,7 +2711,8 @@ def get_conversations():
 @jwt_required()
 def get_conversation(conversation_id):
     """Get a specific conversation with all messages"""
-    spa_id = get_jwt_identity()
+    claims = get_jwt()
+    spa_id = claims.get('spa_id')
     
     db = SessionLocal()
     try:
@@ -2903,8 +2753,8 @@ def get_conversation(conversation_id):
 @track_request_performance
 def chatbot_message():
     """Handle chatbot messages with conversation persistence"""
-    spa_id = get_jwt_identity()
     claims = get_jwt()
+    spa_id = claims.get('spa_id')
     user_id = claims.get('user_id')
     
     try:
@@ -3079,24 +2929,3 @@ def save_calendar_settings():
         print(f"Error saving calendar settings: {str(e)}")
         return jsonify({"error": "Failed to save calendar settings"}), 500
 
-# Helper function to get spa_id from either JWT claims or custom header
-def get_spa_id_from_request():
-    """
-    Gets spa_id from JWT claims or X-Spa-ID header.
-    Returns spa_id if found, None otherwise.
-    """
-    # First check JWT claims (primary source)
-    claims = get_jwt()
-    spa_id = claims.get('spa_id')
-    
-    # If not in claims, check if it's in the sub claim
-    if not spa_id and 'sub' in claims:
-        spa_id = claims.get('sub')
-    
-    # If still not found, check custom header (backup)
-    if not spa_id:
-        spa_id = request.headers.get('X-Spa-ID')
-        if spa_id:
-            print(f"Using spa_id from X-Spa-ID header: {spa_id}")
-    
-    return spa_id

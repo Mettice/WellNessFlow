@@ -50,21 +50,61 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // Set up axios interceptor for authentication
+  // Extract spa_id from token and ensure it's stored and available
+  const extractAndStoreSpaId = (token: string, userObj?: User | null) => {
+    if (!token || !isValidToken(token)) return null;
+    
+    let spa_id = null;
+    
+    // 1. Try to extract from token
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.spa_id) {
+        spa_id = payload.spa_id;
+      } else if (payload.sub) {
+        // Some backends use sub claim as spa_id
+        spa_id = payload.sub;
+      }
+    } catch (error) {
+      console.error('Error extracting spa_id from token:', error);
+    }
+    
+    // 2. If not in token but in user object, use that
+    if (!spa_id && userObj?.spa_id) {
+      spa_id = userObj.spa_id;
+    }
+    
+    // 3. If found, store it for system-wide use
+    if (spa_id) {
+      localStorage.setItem('spa_id', spa_id);
+      
+      // Set X-Spa-ID header for APIs that look for it in headers
+      axios.defaults.headers.common['X-Spa-ID'] = spa_id;
+    }
+    
+    return spa_id;
+  };
+
+  // Set up auth state on component mount
   useEffect(() => {
     const token = localStorage.getItem('token');
     
     // Set default authorization header if token exists
     if (token && isValidToken(token)) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      // Also set up spa_id based on token
+      try {
+        const userData = localStorage.getItem('user');
+        const user = userData ? JSON.parse(userData) : null;
+        extractAndStoreSpaId(token, user);
+      } catch (error) {
+        console.error('Error restoring spa_id from token:', error);
+      }
     }
 
     // Check authentication status on mount
     checkAuth();
-
-    return () => {
-      // No interceptor to clean up
-    };
   }, []);
 
   // Add a function to check token validity for API calls
@@ -75,10 +115,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     // Make sure token is set in axios defaults
-    const authHeader = axios.defaults.headers.common['Authorization'];
-    if (!authHeader || (typeof authHeader === 'string' && !authHeader.includes(token))) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    }
+    setupAuthHeaderForServiceCalls(token);
+    
+    // Also ensure spa_id is available
+    const userData = localStorage.getItem('user');
+    const user = userData ? JSON.parse(userData) : null;
+    extractAndStoreSpaId(token, user);
     
     return true;
   };
@@ -101,14 +143,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         // Try to get user data from API
         const response = await axios.get('/api/auth/me');
-        setUser(response.data);
-        localStorage.setItem('user', JSON.stringify(response.data));
+        const userData = response.data;
+        
+        // Store user data
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+        
+        // Ensure spa_id is extracted and stored
+        extractAndStoreSpaId(token, userData);
       } catch (e) {
         // If API call fails, try to get user data from localStorage as fallback
         const userData = localStorage.getItem('user');
         if (userData) {
           try {
-            setUser(JSON.parse(userData));
+            const user = JSON.parse(userData);
+            setUser(user);
+            
+            // Still try to extract spa_id even with cached user
+            extractAndStoreSpaId(token, user);
           } catch (e) {
             localStorage.removeItem('user');
             setUser(null);
@@ -117,11 +169,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setUser(null);
         }
       }
-      
-      setLoading(false);
     } catch (error) {
       console.error('Error checking authentication:', error);
       setUser(null);
+    } finally {
       setLoading(false);
     }
   };
@@ -153,6 +204,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Set the authorization header for future requests
       setupAuthHeaderForServiceCalls(access_token);
       
+      // Extract and store spa_id from token and/or user object
+      extractAndStoreSpaId(access_token, user);
+      
       // Update user state
       setUser(user);
     } catch (error: any) {
@@ -168,9 +222,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Clear local storage
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('spa_id'); // Also clear spa_id
       
       // Clear axios headers
       delete axios.defaults.headers.common['Authorization'];
+      delete axios.defaults.headers.common['X-Spa-ID']; // Clear spa_id header
       
       setUser(null);
     } catch (error) {
@@ -196,8 +252,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
       
       if (user) {
-        localStorage.setItem('user', JSON.stringify(user));
-        setUser(user);
+        // Add business name to user object if not already present
+        const enhancedUser = {
+          ...user,
+          businessName: user.businessName || businessName
+        };
+        
+        localStorage.setItem('user', JSON.stringify(enhancedUser));
+        setUser(enhancedUser);
+        
+        // Extract and store spa_id
+        extractAndStoreSpaId(access_token, enhancedUser);
       }
       
       // Handle both onboarding formats

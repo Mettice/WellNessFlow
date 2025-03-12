@@ -1,8 +1,9 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, ForeignKey, Boolean, Text, Date, Table
+from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, ForeignKey, Boolean, Text, Date, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import os
 from datetime import datetime
+
 
 # Create the database directory if it doesn't exist
 os.makedirs('instance', exist_ok=True)
@@ -140,13 +141,13 @@ class Appointment(Base):
     client_phone = Column(String)
     service_id = Column(Integer, ForeignKey("services.id"))
     location_id = Column(Integer, ForeignKey("locations.id"))
-    appointment_datetime = Column(DateTime, index=True)
+    datetime = Column(DateTime, index=True)
     status = Column(String)  # confirmed, cancelled, completed
     reminder_sent = Column(Boolean, default=False)
     feedback_sent = Column(Boolean, default=False)
     notes = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     
     service = relationship("SpaService", back_populates="appointments")
     location = relationship("Location", back_populates="appointments")

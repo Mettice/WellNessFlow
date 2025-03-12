@@ -101,6 +101,17 @@ const Dashboard: React.FC = () => {
     };
   }, []);
 
+  // Debug token on mount
+  useEffect(() => {
+    axios.get('/api/auth/debug-token')
+      .then(response => {
+        console.log('Token debug:', response.data);
+      })
+      .catch(error => {
+        console.error('Token debug error:', error.response?.data || error);
+      });
+  }, []); // Empty dependency array means this runs once on mount
+
   // Initial data load
   useEffect(() => {
     // Fetch data based on current navigation

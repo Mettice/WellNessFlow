@@ -158,26 +158,16 @@ def login():
                     user.spa_id = spa_id
                     db.commit()
             
-            print(f"Creating access token with identity={spa_id} and additional claims")
+            print(f"Creating access token with identity={user.id} and additional claims")
             
-            # Prepare claims
-            additional_claims = {
-                "user_id": str(user.id),
-                "role": user.role,
-                "email": user.email,
-                "spa_id": spa_id
-            }
-            
-            # Always add spa_id to claims if it exists
-            if spa_id:
-                additional_claims["spa_id"] = spa_id
-                print(f"Added spa_id to token claims: {spa_id}")
-            
-            # Create the access token
             access_token = create_access_token(
-                identity=spa_id,  # Use spa_id as identity (in sub claim)
-                additional_claims=additional_claims,
-                expires_delta=timedelta(days=7)  # Extend token lifetime for testing
+                identity=str(user.id),  # This becomes the 'sub' claim
+                additional_claims={
+                    "user_id": str(user.id),
+                    "role": user.role,
+                    "email": user.email,
+                    "spa_id": spa_id
+                }
             )
             
             # Decode token for debugging
@@ -229,21 +219,41 @@ def login():
 @jwt_required()
 def debug_token():
     """Debug endpoint to check JWT token contents"""
-    claims = get_jwt()
-    headers = get_jwt_header()
-    return jsonify({
-        'claims': claims,
-        'headers': headers
-    })
+    print("\n=== Debug Token Endpoint ===")
+    try:
+        # Get the raw token from the header
+        auth_header = request.headers.get('Authorization', '')
+        print(f"Auth header: {auth_header}")
+        
+        # Get JWT claims and headers
+        claims = get_jwt()
+        headers = get_jwt_header()
+        
+        print(f"Claims found: {claims}")
+        print(f"Headers found: {headers}")
+        
+        return jsonify({
+            'claims': claims,
+            'headers': headers,
+            'auth_header': auth_header
+        })
+    except Exception as e:
+        print(f"Error in debug_token: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'auth_header': request.headers.get('Authorization', '')
+        }), 401
 
 @bp.route('/auth/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
     """Get current authenticated user's information"""
-    user_id = get_jwt_identity()
+    claims = get_jwt()
+    user_id = get_jwt_identity()  # This will be the user.id as string
+    
     db = SessionLocal()
     try:
-        user = db.query(User).filter_by(id=user_id).first()
+        user = db.query(User).filter_by(id=int(user_id)).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
             
@@ -658,33 +668,59 @@ def get_bot_metrics():
         try:
             # Get claims from JWT
             claims = get_jwt()
+            
+            # Try multiple sources for spa_id in order of preference
+            spa_id = None
+            
+            # 1. Try from JWT claims
             spa_id = claims.get('spa_id')
             
+            # 2. Try from URL parameters
             if not spa_id:
-                return jsonify({"error": "Unauthorized - No spa_id in token"}), 401
+                spa_id = request.args.get('spa_id')
             
-            # Get time range from query params (default to last 30 days)
+            # 3. Try from user record using JWT identity
+            if not spa_id:
+                user_id = claims.get('user_id') or get_jwt_identity()
+                if user_id:
+                    user = db.query(User).filter_by(id=int(user_id)).first()
+                    if user:
+                        spa_id = user.spa_id
+            
+            # 4. Try from request headers
+            if not spa_id:
+                spa_id = request.headers.get('X-Spa-ID')
+            
+            if not spa_id:
+                print("No spa_id found in any source")
+                print(f"Claims: {claims}")
+                print(f"URL params: {request.args}")
+                print(f"Headers: {request.headers}")
+                return jsonify({
+                    'totalConversations': 0,
+                    'successfulBookings': 0,
+                    'conversionRate': 0,
+                    'popularServices': [],
+                    'peakHours': []
+                }), 200  # Return empty data instead of error
+            
+            # Rest of the existing code...
             days = int(request.args.get('days', 30))
             start_date = datetime.now() - timedelta(days=days)
             
-            # Get total conversations (all appointments)
             total_conversations = db.query(func.count(Appointment.id)).filter(
                 Appointment.spa_id == spa_id,
                 Appointment.created_at >= start_date
             ).scalar() or 0
             
-            # Get successful bookings (confirmed appointments)
             successful_bookings = db.query(func.count(Appointment.id)).filter(
                 Appointment.spa_id == spa_id,
                 Appointment.status == 'confirmed',
                 Appointment.created_at >= start_date
             ).scalar() or 0
             
-            # Calculate conversion rate safely
             conversion_rate = (successful_bookings / total_conversations * 100) if total_conversations > 0 else 0
             
-            # Get popular services with proper null handling
-            popular_services = []
             services_query = db.query(
                 SpaService.name,
                 func.count(Appointment.id).label('booking_count')
@@ -708,8 +744,6 @@ def get_bot_metrics():
                 for service_name, count in services_query
             ]
             
-            # Get peak booking hours with proper null handling
-            peak_hours = []
             hours_query = db.query(
                 func.strftime('%H', Appointment.datetime).label('hour'),
                 func.count(Appointment.id).label('booking_count')
@@ -727,23 +761,9 @@ def get_bot_metrics():
                 for hour, count in hours_query
             ]
             
-            # Calculate average response time with safe default
-            avg_response_time = db.query(
-                func.avg(
-                    func.julianday(Appointment.created_at) - 
-                    func.julianday(Appointment.datetime)
-                ) * 24 * 60  # Convert to minutes
-            ).filter(
-                Appointment.spa_id == spa_id,
-                Appointment.created_at >= start_date
-            ).scalar() or 0
-            
-            avg_response_time_str = f"{round(avg_response_time, 1)} min"
-            
             return jsonify({
                 'totalConversations': total_conversations,
                 'successfulBookings': successful_bookings,
-                'averageResponseTime': avg_response_time_str,
                 'conversionRate': round(conversion_rate, 1),
                 'popularServices': popular_services or [],
                 'peakHours': peak_hours or []
@@ -758,11 +778,10 @@ def get_bot_metrics():
         return jsonify({
             'totalConversations': 0,
             'successfulBookings': 0,
-            'averageResponseTime': '0 min',
             'conversionRate': 0,
             'popularServices': [],
             'peakHours': []
-        }), 200  # Return empty metrics instead of 500 error
+        }), 200  # Return empty metrics instead of error
 
 @bp.route('/payment/process', methods=['POST'])
 def process_payment():
@@ -1133,23 +1152,19 @@ def get_documents():
         
         # First check for spa_id in the claims
         spa_id = claims.get('spa_id')
-        if not spa_id and 'sub' in claims:
-            # If not found, use the sub field as backup
-            spa_id = claims.get('sub')
-            print(f"Using spa_id from JWT sub claim: {spa_id}")
+        user_id = claims.get('user_id')
         
-        # Last resort - check header
         if not spa_id:
-            spa_id = request.headers.get('X-Spa-ID')
-            if spa_id:
-                print(f"Using spa_id from X-Spa-ID header: {spa_id}")
+            # Try to get spa_id from user record
+            user = db.query(User).filter_by(id=int(user_id)).first()
+            if user and user.spa_id:
+                spa_id = user.spa_id
+                print(f"Using spa_id from user record: {spa_id}")
+            else:
+                print("No spa_id found in token or user record")
+                return jsonify({"error": "No spa_id found in token"}), 422
         
         print(f"Final resolved spa_id: {spa_id}")
-        
-        if not spa_id:
-            print("No spa_id found in any source, returning empty document list")
-            # Return empty list with success status
-            return jsonify({"documents": [], "message": "No spa_id found, returning empty document list"}), 200
         
         db = SessionLocal()
         try:
@@ -2207,17 +2222,47 @@ def suspend_spa(spa_id):
 def get_daily_metrics():
     db = SessionLocal()
     try:
+        # Try multiple sources for spa_id in order of preference
+        spa_id = None
+        
+        # Get claims from JWT
         claims = get_jwt()
+        
+        # 1. Try from JWT claims
         spa_id = claims.get('spa_id')
         
-
+        # 2. Try from URL parameters
         if not spa_id:
-            return jsonify({"error": "Invalid token - spa_id not found"}), 401
+            spa_id = request.args.get('spa_id')
         
+        # 3. Try from user record using JWT identity
+        if not spa_id:
+            user_id = claims.get('user_id') or get_jwt_identity()
+            if user_id:
+                user = db.query(User).filter_by(id=int(user_id)).first()
+                if user:
+                    spa_id = user.spa_id
+        
+        # 4. Try from request headers
+        if not spa_id:
+            spa_id = request.headers.get('X-Spa-ID')
+        
+        if not spa_id:
+            print("No spa_id found in any source for daily metrics")
+            print(f"Claims: {claims}")
+            print(f"URL params: {request.args}")
+            print(f"Headers: {request.headers}")
+            return jsonify({
+                'total_appointments': 0,
+                'completed_appointments': 0,
+                'upcoming_appointments': 0,
+                'revenue_today': 0
+            }), 200  # Return empty data instead of error
+            
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
             
-         # Get all appointments for today
+        # Get all appointments for today
         appointments = db.query(Appointment).filter(
             Appointment.spa_id == spa_id,
             Appointment.datetime >= today,
@@ -2235,24 +2280,21 @@ def get_daily_metrics():
                 if hasattr(apt.service, 'price') and apt.service.price is not None:
                     revenue += apt.service.price
         
-        response_data = {
+        return jsonify({
             'total_appointments': len(appointments),
             'completed_appointments': completed,
             'upcoming_appointments': upcoming,
             'revenue_today': revenue
-        }
-        
-        return jsonify(response_data)
+        })
         
     except Exception as e:
         print(f"Error in get_daily_metrics: {str(e)}")
-        # Return empty metrics with success status code even on error
         return jsonify({
             'total_appointments': 0,
             'completed_appointments': 0,
             'upcoming_appointments': 0,
             'revenue_today': 0
-        })
+        }), 200  # Return empty metrics instead of error
     finally:
         db.close()
 
@@ -2261,11 +2303,23 @@ def get_daily_metrics():
 def get_today_appointments():
     db = SessionLocal()
     try:
+        # Get claims from JWT
         claims = get_jwt()
         spa_id = claims.get('spa_id')
+        user_id = claims.get('user_id')
+        
+        # If no spa_id in claims, try to get from user record
+        if not spa_id and user_id:
+            user = db.query(User).filter_by(id=int(user_id)).first()
+            if user:
+                spa_id = user.spa_id
+        
+        # If still no spa_id, check request headers and URL params
+        if not spa_id:
+            spa_id = request.headers.get('X-Spa-ID') or request.args.get('spa_id')
         
         if not spa_id:
-            return jsonify({"error": "Unauthorized - No spa_id in token"}), 401
+            return jsonify({"error": "No spa_id found"}), 401
             
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
@@ -2297,7 +2351,6 @@ def get_today_appointments():
         
     except Exception as e:
         print(f"Error in get_today_appointments: {str(e)}")
-        # Return empty list with success status code even on error
         return jsonify([])
     finally:
         db.close()

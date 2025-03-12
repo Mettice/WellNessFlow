@@ -68,6 +68,17 @@ def create_app(test_config=None):
     jwt = JWTManager(app)
     
     # Add JWT error handlers
+    @jwt.token_in_blocklist_loader
+    def check_if_token_revoked(jwt_header, jwt_payload: dict) -> bool:
+        print(f"Checking token claims: {jwt_payload}")
+        return False
+
+    @jwt.decode_key_loader
+    def get_decode_key(jwt_header, jwt_payload):
+        print(f"Decoding token with header: {jwt_header}")
+        print(f"Decoding token with payload: {jwt_payload}")
+        return jwt_secret
+
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):  # noqa: F811
         logger.warning("Expired token", _payload=jwt_payload)

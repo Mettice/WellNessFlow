@@ -4,10 +4,10 @@ export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:50
 
 // Add spa-id header to all requests
 axios.interceptors.request.use((config) => {
-  // In a real app, get this from auth context or local storage
-  const spaId = localStorage.getItem('spa-id');
+  // Get spa_id from localStorage using consistent key
+  const spaId = localStorage.getItem('spa_id');
   if (spaId) {
-    config.headers['spa-id'] = spaId;
+    config.headers['X-Spa-ID'] = spaId;  // Use consistent header name
   }
   return config;
 });
@@ -19,9 +19,9 @@ export const apiClient = axios.create({
 
 // Add the same interceptor to the apiClient
 apiClient.interceptors.request.use((config) => {
-  const spaId = localStorage.getItem('spa-id');
+  const spaId = localStorage.getItem('spa_id');
   if (spaId) {
-    config.headers['spa-id'] = spaId;
+    config.headers['X-Spa-ID'] = spaId;  // Use consistent header name
   }
   return config;
 });

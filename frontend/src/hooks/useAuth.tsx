@@ -56,30 +56,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     let spa_id = null;
     
-    // 1. Try to extract from token
+    // Extract spa_id from token claims
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
-      if (payload.spa_id) {
-        spa_id = payload.spa_id;
-      } else if (payload.sub) {
-        // Some backends use sub claim as spa_id
-        spa_id = payload.sub;
+      spa_id = payload.spa_id;  // Use spa_id claim
+      
+      // If not found in token, try user object
+      if (!spa_id && userObj && userObj.spa_id) {
+        spa_id = userObj.spa_id;
       }
     } catch (error) {
       console.error('Error extracting spa_id from token:', error);
     }
     
-    // 2. If not in token but in user object, use that
-    if (!spa_id && userObj?.spa_id) {
-      spa_id = userObj.spa_id;
-    }
-    
-    // 3. If found, store it for system-wide use
+    // If found, store it consistently
     if (spa_id) {
       localStorage.setItem('spa_id', spa_id);
-      
-      // Set X-Spa-ID header for APIs that look for it in headers
       axios.defaults.headers.common['X-Spa-ID'] = spa_id;
+    } else {
+      console.error('❌ No spa_id found in token claims or user object. Authentication will fail.');
     }
     
     return spa_id;

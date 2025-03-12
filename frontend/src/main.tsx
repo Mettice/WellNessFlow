@@ -73,49 +73,43 @@ axios.interceptors.request.use(
             console.log(`Token expires in: ${minutesRemaining} minutes`);
           }
           
-          // COMPREHENSIVE SPA_ID HANDLING - Check all possible sources
-          
-          // 1. First priority: Check for spa_id in token payload
+          // STANDARDIZED SPA_ID HANDLING
+          // Get spa_id from token claims
           let spaId = payload.spa_id;
           
-          // 2. Second priority: Check for spa_id in localStorage (set by useAuth hook)
+          // If not found in token, try user data in localStorage
           if (!spaId) {
-            const storedSpaId = localStorage.getItem('spa_id');
-            if (storedSpaId) {
-              spaId = storedSpaId;
-              console.log(`Using spa_id from localStorage: ${spaId}`);
+            try {
+              const userData = localStorage.getItem('user');
+              if (userData) {
+                const user = JSON.parse(userData);
+                spaId = user.spa_id;
+              }
+            } catch (error) {
+              console.error('Error getting spa_id from user data:', error);
             }
           }
           
-          // 3. Third priority: Use sub claim from token as a fallback
-          if (!spaId && payload.sub) {
-            spaId = payload.sub;
-            console.log(`Using token's sub claim as spa_id: ${spaId}`);
-          }
-          
-          // If we have a spa_id from any source, use it consistently
           if (spaId) {
-            // Add to request headers
+            // Add to request headers consistently
             config.headers['X-Spa-ID'] = spaId;
-            console.log(`Added spa_id to request headers: ${spaId}`);
             
-            // Store in localStorage for future use
+            // Store in localStorage with consistent key
             if (localStorage.getItem('spa_id') !== spaId) {
               localStorage.setItem('spa_id', spaId);
-              console.log(`Updated spa_id in localStorage: ${spaId}`);
             }
             
-            // Add to URL parameters for all API calls
-            if (config.url) {
-              // Only add if not already present
-              if (!config.url.includes('spa_id=')) {
-                const separator = config.url.includes('?') ? '&' : '?';
-                config.url += `${separator}spa_id=${spaId}`;
-                console.log(`Added spa_id to request URL: ${config.url}`);
-              }
+            // Add to URL parameters only for specific endpoints that require it
+            if (config.url && (
+              config.url.includes('/api/admin/') || 
+              config.url.includes('/api/documents') ||
+              config.url.includes('/api/upload')
+            )) {
+              const separator = config.url.includes('?') ? '&' : '?';
+              config.url += `${separator}spa_id=${spaId}`;
             }
           } else {
-            console.warn('⚠️ No spa_id found in token, localStorage, or sub claim. Authentication may fail.');
+            console.error('❌ No spa_id found in token claims or user data. Authentication will fail.');
           }
         } catch (error) {
           console.error('Error parsing JWT token:', error);

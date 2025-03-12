@@ -2125,6 +2125,10 @@ def get_all_spas():
 @require_super_admin
 def get_platform_metrics():
     """Get platform-wide metrics (super admin only)"""
+    # Log the request details
+    print(f"Request headers: {dict(request.headers)}")
+    print(f"JWT claims: {get_jwt()}")
+    
     db = SessionLocal()
     try:
         # Get latest metrics
@@ -2148,16 +2152,24 @@ def get_platform_metrics():
             except Exception as attr_err:
                 print(f"Error accessing metrics attributes: {str(attr_err)}")
         
-        return jsonify({
+        response = jsonify({
             'total_spas': total_spas,
             'active_spas': active_spas,
             'total_bookings': total_bookings,
             'total_revenue': total_revenue,
             'last_updated': last_updated
         })
+        
+        # Add CORS headers
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:5173')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+        
+        return response
     except Exception as e:
         # Log the exception for debugging
         print(f"Error in get_platform_metrics: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Failed to fetch metrics: {str(e)}'}), 500
     finally:
         db.close()

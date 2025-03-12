@@ -101,9 +101,8 @@ axios.interceptors.request.use(
             
             // Add to URL parameters only for specific endpoints that require it
             if (config.url && (
-              config.url.includes('/api/admin/') || 
-              config.url.includes('/api/documents') ||
-              config.url.includes('/api/upload')
+              config.url.includes('/documents') ||
+              config.url.includes('/upload')
             )) {
               const separator = config.url.includes('?') ? '&' : '?';
               config.url += `${separator}spa_id=${spaId}`;

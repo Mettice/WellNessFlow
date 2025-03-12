@@ -42,41 +42,35 @@ export const PlatformDashboard: React.FC = () => {
 
   const fetchMetrics = async () => {
     try {
-      // Get the token directly from localStorage to ensure it's the latest
-      const token = localStorage.getItem('token');
-      
-      const response = await axios({
-        method: 'get',
-        url: '/api/admin/platform/metrics',
+      const response = await axios.get('/admin/platform/metrics', {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Accept': 'application/json',
         }
       });
-      
-      setMetrics(response.data);
-    } catch (err: any) {
-      console.error('Error fetching metrics:', err);
-      setError('Failed to load metrics');
+      if (response.data) {
+        setMetrics(response.data);
+        setError('');
+      }
+    } catch (error) {
+      console.error('Error fetching metrics:', error);
+      setError('Failed to fetch platform metrics');
     }
   };
 
   const fetchSpas = async () => {
     try {
-      // Get the token directly from localStorage to ensure it's the latest
-      const token = localStorage.getItem('token');
-      
-      const response = await axios({
-        method: 'get',
-        url: '/api/admin/platform/spas',
+      const response = await axios.get('/admin/platform/spas', {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Accept': 'application/json',
         }
       });
-      
-      setSpas(response.data);
-    } catch (err: any) {
-      console.error('Error fetching spas:', err);
-      setError('Failed to load spas');
+      if (response.data) {
+        setSpas(response.data);
+        setError('');
+      }
+    } catch (error) {
+      console.error('Error fetching spas:', error);
+      setError('Failed to fetch platform spas');
     } finally {
       setLoading(false);
     }
@@ -84,17 +78,12 @@ export const PlatformDashboard: React.FC = () => {
 
   const fetchSpaDetails = async (spaId: string) => {
     try {
-      // Get the token directly from localStorage to ensure it's the latest
       const token = localStorage.getItem('token');
-      
-      const response = await axios({
-        method: 'get',
-        url: `/api/admin/platform/spa/${spaId}`,
+      const response = await axios.get(`/admin/platform/spa/${spaId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      
       setSpaDetails(response.data);
       setSelectedSpa(spaId);
     } catch (error) {
@@ -112,17 +101,12 @@ export const PlatformDashboard: React.FC = () => {
     }
 
     try {
-      // Get the token directly from localStorage to ensure it's the latest
       const token = localStorage.getItem('token');
-      
-      await axios({
-        method: 'post',
-        url: `/api/admin/platform/spa/${spaId}/suspend`,
+      await axios.post(`/admin/platform/spa/${spaId}/suspend`, null, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      
       showToast({
         title: 'Success',
         description: 'Spa suspended successfully',

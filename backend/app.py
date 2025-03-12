@@ -19,8 +19,16 @@ from monitoring import get_metrics, export_metrics_prometheus
 
 def create_app(test_config=None):
     app = Flask(__name__)
-    # Configure CORS to allow all origins and methods with no restrictions
-    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+    # Configure CORS with all necessary settings
+    CORS(app, 
+        resources={r"/*": {
+            "origins": ["http://localhost:5173"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Spa-ID", "Access-Control-Allow-Origin"],
+            "expose_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True,
+            "max_age": 600
+        }})
     
     # Get OpenAI API key and ensure it's available
     openai_api_key = os.getenv('OPENAI_API_KEY')

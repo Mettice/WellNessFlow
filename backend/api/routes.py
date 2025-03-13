@@ -2067,19 +2067,33 @@ def disconnect_calendar():
 def require_super_admin(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        claims = get_jwt()
-        user_id = claims.get('user_id')
-        
-        db = SessionLocal()
         try:
-            # Convert user_id to integer for database query
-            user = db.query(User).filter_by(id=int(user_id)).first()
-            if not user or user.role != 'super_admin':
-                return jsonify({'error': 'Super admin access required'}), 403
-        finally:
-            db.close()
+            claims = get_jwt()
+            print(f"DEBUG - Full JWT Claims: {claims}")
             
-        return f(*args, **kwargs)
+            role = claims.get('role')
+            print(f"DEBUG - Role from token: {role} (type: {type(role)})")
+            
+            if not role:
+                print("DEBUG - No role found in JWT claims")
+                return jsonify({'error': 'No role found in token'}), 403
+                
+            if not isinstance(role, str):
+                print(f"DEBUG - Role is not a string: {role}")
+                return jsonify({'error': 'Invalid role format'}), 403
+            
+            # Make role comparison case-insensitive
+            if role.lower() != 'super_admin':
+                print(f"DEBUG - Role mismatch: {role} != super_admin")
+                return jsonify({'error': 'Super admin access required'}), 403
+            
+            print("DEBUG - Role check passed, proceeding with request")
+            return f(*args, **kwargs)
+            
+        except Exception as e:
+            print(f"DEBUG - Error in require_super_admin: {str(e)}")
+            return jsonify({'error': 'Authentication error'}), 403
+            
     return decorated_function
 
 @bp.route('/admin/platform/spas', methods=['GET'])
@@ -2090,33 +2104,16 @@ def get_all_spas():
     db = SessionLocal()
     try:
         spas = db.query(Client).all()
-        result = []
-        
-        for spa in spas:
-            # Safely calculate last_active time
-            last_active = None
-            if spa.users:
-                # Filter out None values and find max
-                login_times = [user.last_login for user in spa.users if user.last_login is not None]
-                if login_times:
-                    last_active = max(login_times).isoformat()
-            
-            result.append({
-                'id': spa.id,
-                'spa_id': spa.spa_id,
-                'name': spa.name,
-                'email': spa.email,
-                'subscription_plan': spa.subscription_plan or 'free',
-                'subscription_status': spa.subscription_status or 'inactive',
-                'created_at': spa.created_at.isoformat() if spa.created_at else None,
-                'last_active': last_active
-            })
-        
-        return jsonify(result)
-    except Exception as e:
-        # Log the exception for debugging
-        print(f"Error in get_all_spas: {str(e)}")
-        return jsonify({'error': f'Failed to fetch spas: {str(e)}'}), 500
+        return jsonify([{
+            'id': spa.id,
+            'spa_id': spa.spa_id,
+            'name': spa.name,
+            'email': spa.email,
+            'subscription_plan': spa.subscription_plan,
+            'subscription_status': spa.subscription_status,
+            'created_at': spa.created_at.isoformat(),
+            'last_active': max(user.last_login for user in spa.users).isoformat() if spa.users else None
+        } for spa in spas])
     finally:
         db.close()
 
@@ -2125,52 +2122,22 @@ def get_all_spas():
 @require_super_admin
 def get_platform_metrics():
     """Get platform-wide metrics (super admin only)"""
-    # Log the request details
-    print(f"Request headers: {dict(request.headers)}")
-    print(f"JWT claims: {get_jwt()}")
-    
     db = SessionLocal()
     try:
         # Get latest metrics
         metrics = db.query(PlatformMetrics).order_by(PlatformMetrics.metrics_date.desc()).first()
         
         # Get real-time counts
-        total_spas = db.query(func.count(Client.id)).scalar() or 0
-        active_spas = db.query(func.count(Client.id)).filter(Client.subscription_status == 'active').scalar() or 0
+        total_spas = db.query(func.count(Client.id)).scalar()
+        active_spas = db.query(func.count(Client.id)).filter(Client.subscription_status == 'active').scalar()
         
-        # Safely get metrics values with fallbacks
-        total_bookings = 0
-        total_revenue = 0.0
-        last_updated = None
-        
-        if metrics:
-            try:
-                total_bookings = metrics.total_bookings or 0
-                total_revenue = metrics.total_revenue or 0.0
-                if hasattr(metrics, 'updated_at') and metrics.updated_at:
-                    last_updated = metrics.updated_at.isoformat()
-            except Exception as attr_err:
-                print(f"Error accessing metrics attributes: {str(attr_err)}")
-        
-        response = jsonify({
+        return jsonify({
             'total_spas': total_spas,
             'active_spas': active_spas,
-            'total_bookings': total_bookings,
-            'total_revenue': total_revenue,
-            'last_updated': last_updated
+            'total_bookings': metrics.total_bookings if metrics else 0,
+            'total_revenue': metrics.total_revenue if metrics else 0.0,
+            'last_updated': metrics.updated_at.isoformat() if metrics else None
         })
-        
-        # Add CORS headers
-        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:5173')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
-        
-        return response
-    except Exception as e:
-        # Log the exception for debugging
-        print(f"Error in get_platform_metrics: {str(e)}")
-        print(f"Full traceback: {traceback.format_exc()}")
-        return jsonify({'error': f'Failed to fetch metrics: {str(e)}'}), 500
     finally:
         db.close()
 

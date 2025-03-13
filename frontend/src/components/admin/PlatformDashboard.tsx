@@ -42,35 +42,21 @@ export const PlatformDashboard: React.FC = () => {
 
   const fetchMetrics = async () => {
     try {
-      const response = await axios.get('/admin/platform/metrics', {
-        headers: {
-          'Accept': 'application/json',
-        }
-      });
-      if (response.data) {
-        setMetrics(response.data);
-        setError('');
-      }
-    } catch (error) {
-      console.error('Error fetching metrics:', error);
-      setError('Failed to fetch platform metrics');
+      const response = await axios.get('/api/admin/platform/metrics');
+      setMetrics(response.data);
+    } catch (err) {
+      setError('Failed to load metrics');
+      console.error('Error fetching metrics:', err);
     }
   };
 
   const fetchSpas = async () => {
     try {
-      const response = await axios.get('/admin/platform/spas', {
-        headers: {
-          'Accept': 'application/json',
-        }
-      });
-      if (response.data) {
-        setSpas(response.data);
-        setError('');
-      }
-    } catch (error) {
-      console.error('Error fetching spas:', error);
-      setError('Failed to fetch platform spas');
+      const response = await axios.get('/api/admin/platform/spas');
+      setSpas(response.data);
+    } catch (err) {
+      setError('Failed to load spas');
+      console.error('Error fetching spas:', err);
     } finally {
       setLoading(false);
     }
@@ -78,12 +64,7 @@ export const PlatformDashboard: React.FC = () => {
 
   const fetchSpaDetails = async (spaId: string) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`/admin/platform/spa/${spaId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await axios.get(`/api/admin/platform/spa/${spaId}`);
       setSpaDetails(response.data);
       setSelectedSpa(spaId);
     } catch (error) {
@@ -101,12 +82,7 @@ export const PlatformDashboard: React.FC = () => {
     }
 
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(`/admin/platform/spa/${spaId}/suspend`, null, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      await axios.post(`/api/admin/platform/spa/${spaId}/suspend`);
       showToast({
         title: 'Success',
         description: 'Spa suspended successfully',

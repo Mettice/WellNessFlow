@@ -22,13 +22,14 @@ def create_app(test_config=None):
     # Configure CORS with all necessary settings
     CORS(app, 
         resources={r"/*": {
-            "origins": ["http://localhost:5173"],
+            "origins": "*",  # Allow all origins in development
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization", "X-Spa-ID", "Access-Control-Allow-Origin"],
             "expose_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True,
+            "supports_credentials": False,  # Cannot use True with wildcard origin
             "max_age": 600
-        }})
+        }}
+    )
     
     # Get OpenAI API key and ensure it's available
     openai_api_key = os.getenv('OPENAI_API_KEY')

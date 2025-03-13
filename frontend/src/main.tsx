@@ -50,7 +50,9 @@ axios.interceptors.request.use(
     
     // Validate the token format
     if (token && validateJwtToken(token)) {
-      config.headers.Authorization = `Bearer ${token}`;
+      // Check if token already has Bearer prefix
+      const finalToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+      config.headers.Authorization = finalToken;
       
       // Log token information for non-sensitive endpoints
       if (config.url && !config.url.includes('/auth/')) {
@@ -111,7 +113,7 @@ axios.interceptors.request.use(
             console.error('❌ No spa_id found in token claims or user data. Authentication will fail.');
           }
         } catch (error) {
-          console.error('Error parsing JWT token:', error);
+          console.error('Error parsing token:', error);
         }
       }
     } else {

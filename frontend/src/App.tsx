@@ -47,11 +47,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole 
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (requiredRole && user.role !== requiredRole) {
+  // Make role comparison case-insensitive
+  const userRole = user.role.toLowerCase();
+  const requiredRoleLower = requiredRole ? requiredRole.toLowerCase() : null;
+
+  if (requiredRoleLower && userRole !== requiredRoleLower) {
     // Redirect based on user role
-    if (user.role === 'super_admin') {
+    if (userRole === 'super_admin') {
       return <Navigate to="/admin/platform" replace />;
-    } else if (user.role === 'spa_admin') {
+    } else if (userRole === 'spa_admin') {
       return <Navigate to="/admin/dashboard" replace />;
     } else {
       return <Navigate to="/staff/dashboard" replace />;

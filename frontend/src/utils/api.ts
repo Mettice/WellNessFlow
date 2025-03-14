@@ -1,21 +1,60 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.PROD 
+  ? import.meta.env.VITE_API_URL 
+  : '';
 
-// Add spa-id header to all requests
+// Add default headers and credentials
+axios.defaults.withCredentials = true;
+axios.defaults.headers.common['Content-Type'] = 'application/json';
+
+// Add request interceptor
 axios.interceptors.request.use((config) => {
-  // In a real app, get this from auth context or local storage
+  // Add spa-id header if available
   const spaId = localStorage.getItem('spa-id');
   if (spaId) {
     config.headers['spa-id'] = spaId;
   }
+
+  // Handle API URL prefix
+  if (!config.url?.startsWith('/api') && !config.url?.startsWith('http')) {
+    config.url = `/api${config.url}`;
+  }
+
+  // In production, ensure full URL is used
+  if (import.meta.env.PROD && !config.url?.startsWith('http')) {
+    config.url = `${API_BASE_URL}${config.url}`;
+  }
+
+  console.log('Request Config:', {
+    url: config.url,
+    method: config.method,
+    baseURL: API_BASE_URL,
+    env: import.meta.env.PROD ? 'production' : 'development'
+  });
+
   return config;
 });
+
+// Add response interceptor for error handling
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data,
+      env: import.meta.env.PROD ? 'production' : 'development'
+    });
+    return Promise.reject(error);
+  }
+);
 
 export const api = {
   content: {
     generate: async (type: 'text' | 'image' | 'video', prompt: string, options: any) => {
-      const response = await axios.post(`${API_BASE_URL}/content/generate/${type}`, {
+      const response = await axios.post(`/content/generate/${type}`, {
         type,
         prompt,
         options
@@ -24,7 +63,7 @@ export const api = {
     },
 
     getHistory: async () => {
-      const response = await axios.get(`${API_BASE_URL}/content/history`);
+      const response = await axios.get('/content/history');
       return response.data;
     },
 
@@ -37,7 +76,7 @@ export const api = {
         metadata?: Record<string, any>;
         scheduled_for: string;
       }) => {
-        const response = await axios.post(`${API_BASE_URL}/content/schedule`, data);
+        const response = await axios.post('/content/schedule', data);
         return response.data;
       },
 
@@ -46,7 +85,7 @@ export const api = {
         platform?: 'blog' | 'facebook' | 'instagram' | 'email';
         date?: string;
       }) => {
-        const response = await axios.get(`${API_BASE_URL}/content/schedule`, {
+        const response = await axios.get('/content/schedule', {
           params: filters
         });
         return response.data;
@@ -59,12 +98,12 @@ export const api = {
         content: string;
         metadata: Record<string, any>;
       }>) => {
-        const response = await axios.patch(`${API_BASE_URL}/content/schedule/${id}`, data);
+        const response = await axios.patch(`/content/schedule/${id}`, data);
         return response.data;
       },
 
       delete: async (id: string) => {
-        await axios.delete(`${API_BASE_URL}/content/schedule/${id}`);
+        await axios.delete(`/content/schedule/${id}`);
       }
     }
   }

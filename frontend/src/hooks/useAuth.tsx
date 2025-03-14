@@ -68,11 +68,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     try {
-      const response = await axios.get('/api/auth/me', {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await axios.get('/api/auth/me');
       setUser(response.data);
     } catch (error) {
       console.error('Auth check failed:', error);

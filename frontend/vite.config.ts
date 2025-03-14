@@ -35,7 +35,7 @@ export default defineConfig({
               headers: req.headers
             });
           });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
+          proxy.on('proxyRes', (proxyRes, req, _res) => {
             const contentType = proxyRes.headers['content-type'] || '';
             if (contentType.includes('application/json')) {
               let body = '';
@@ -53,7 +53,7 @@ export default defineConfig({
                 }
               });
             }
-          })
+          });
         }
       }
     }

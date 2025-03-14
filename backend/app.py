@@ -1,6 +1,7 @@
 import os
 import sys
 from dotenv import load_dotenv
+from flask import Flask, jsonify
 
 # Load environment variables first
 load_dotenv(override=True)
@@ -15,8 +16,30 @@ from flask_cors import CORS
 
 def create_app(test_config=None):
     app = Flask(__name__)
-    CORS(app)
     
+    # Configure CORS to allow requests from Vercel domain
+    CORS(app, resources={
+        r"/*": {
+            "origins": [
+                "https://*.vercel.app",  # Allow all Vercel preview and production domains
+                "http://localhost:3000",  # For local development
+                "http://localhost:5173"   # For Vite dev server
+            ],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
+            "expose_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
+    
+    # Add root route for API verification
+    @app.route('/')
+    def root():
+        return jsonify({
+            "status": "success",
+            "message": "WellnessFlow API is running"
+        })
+
     # Get OpenAI API key and ensure it's available
     openai_api_key = os.getenv('OPENAI_API_KEY')
     if not openai_api_key:

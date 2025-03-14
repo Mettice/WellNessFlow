@@ -21,8 +21,8 @@ COPY . .
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
-# Expose the port the app runs on
+# Expose the port the app runs on (will be overridden by $PORT)
 EXPOSE 5000
 
-# Command to run the application using Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"] 
+# Command to run the application using Gunicorn with PORT environment variable
+CMD gunicorn --bind 0.0.0.0:$PORT app:app 

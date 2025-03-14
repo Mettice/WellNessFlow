@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: spa-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:5000
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: spa-backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    volumes:
+      - sqlite_data:/app/instance
+
+volumes:
+  sqlite_data: 

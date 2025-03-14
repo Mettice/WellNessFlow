@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../../../contexts/ThemeContext';
-import ChatWidget from '../../ChatWidget';
 import DemoChatWidget from '../../DemoChatWidget';
 
 interface ChatbotStats {
@@ -161,20 +160,20 @@ const ChatbotDashboard = () => {
         </div>
 
         {/* Integration Status */}
-        {/* Integration Link */}
         <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-300' : 'bg-white'} shadow text-center`}>
           <p className="mb-4">
             Manage your chatbot connections with Facebook and other platforms
           </p>
           <Link
             to="/chatbot/integrations"
-          className="inline-block px-6 py-3 rounded bg-primary-500 text-white"
-      >
-      View Integrations Dashboard
-      </Link>
+            className="inline-block px-6 py-3 rounded bg-primary-500 text-white"
+          >
+            View Integrations Dashboard
+          </Link>
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
 };
 
 export default ChatbotDashboard;

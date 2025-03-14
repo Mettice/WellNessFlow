@@ -269,7 +269,7 @@ const LandingPage = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center py-4">
               <div className="flex items-center">
-                <img src="/logo.png" alt="WellnessFlow" className="h-8 w-8" />
+                <img src="/output (1).png" alt="WellnessFlow" className="h-8 w-8" />
                 <span className={`ml-2 text-xl font-semibold ${
                   theme === 'dark'
                     ? 'text-accent-cream'

@@ -191,7 +191,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     setIsLoading(true);
 
     try {
-      const endpoint = user?.spa_id ? '/api/chatbot/message' : '/api/public/chat';
+      const endpoint = '/api/public/chat';
       const response = await axios.post(endpoint, {
         message: userMessage.content,
         spa_id: user?.spa_id || 'default',

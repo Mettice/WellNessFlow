@@ -79,13 +79,16 @@ def create_app(test_config=None):
     # Add JWT error handlers
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload: dict) -> bool:
-        print(f"Checking token claims: {jwt_payload}")
+        print(f"[JWT Debug] Checking token claims: {jwt_payload}")
+        print(f"[JWT Debug] Role in claims: {jwt_payload.get('role')}")
+        print(f"[JWT Debug] Token type: {type(jwt_payload)}")
         return False
 
     @jwt.decode_key_loader
     def get_decode_key(jwt_header, jwt_payload):
-        print(f"Decoding token with header: {jwt_header}")
-        print(f"Decoding token with payload: {jwt_payload}")
+        print(f"[JWT Debug] Decoding token header: {jwt_header}")
+        print(f"[JWT Debug] Decoding token payload: {jwt_payload}")
+        print(f"[JWT Debug] Using secret key: {jwt_secret[:5]}...")
         return jwt_secret
 
     @jwt.expired_token_loader

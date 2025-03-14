@@ -51,8 +51,7 @@ def init_stripe(spa_id):
 # Authentication endpoints
 @bp.route('/auth/login', methods=['POST'])
 def login():
-    
-    
+    print("\n=== Login Debug ===")
     try:
         data = request.get_json()
         print(f"Request data: {data}")
@@ -73,13 +72,14 @@ def login():
         email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
         if not email_pattern.match(email):
             print(f"Invalid email format: {email}")
-            return jsonify({'error': 'Invalid email format. Please use a valid email address (e.g., example@domain.com)'}), 400
+            return jsonify({'error': 'Invalid email format'}), 400
 
         db = SessionLocal()
         try:
             print("Querying database for user...")
             user = db.query(User).filter_by(email=email).first()
             print(f"User found: {user is not None}")
+            print(f"User role: {user.role if user else None}")
             
             if not user:
                 print("User not found")
@@ -89,25 +89,13 @@ def login():
                 print("User account is inactive")
                 return jsonify({"error": "Account is inactive"}), 401
             
-            print(f"Checking password for user: {user.email}")
-            print(f"Password hash in DB: {user.password_hash[:10]}... (length: {len(user.password_hash)})")
-            print(f"Password comparison: hash vs plaintext (first 3 chars): {user.password_hash[:3]} vs {password[:3]}")
-            
+            print("Checking password...")
             try:
-                # First try the proper password hash check
                 password_match = check_password_hash(user.password_hash, password)
-                print(f"Password match result using check_password_hash: {password_match}")
-                
-                # IMPORTANT: For debugging only - remove in production
-                # If the hashed check fails, check if the password is stored directly (insecure)
-                if not password_match and user.password_hash == password:
-                    print("WARNING: Plain text password match - this is insecure!")
-                    password_match = True
+                print(f"Password match result: {password_match}")
             except Exception as e:
                 print(f"Error checking password: {str(e)}")
-                print(f"Error type: {type(e).__name__}")
-                print(f"Error traceback: {traceback.format_exc()}")
-                return jsonify({"error": f"Error verifying password: {str(e)}"}), 500
+                return jsonify({"error": "Error verifying password"}), 500
             
             if not password_match:
                 print("Invalid password")
@@ -115,71 +103,24 @@ def login():
                 
             print("Password verified successfully")
             
-            # Ensure spa_id is available
-            spa_id = user.spa_id
-            print(f"User spa_id: {spa_id}")
-            
-            if not spa_id and user.role == 'spa_admin':
-                # If spa_id is missing but user is spa_admin, try to find or create a spa
-                print("No spa_id found, looking for client or creating new one")
-                client = db.query(Client).filter_by(email=user.email).first()
-                if client:
-                    spa_id = client.spa_id
-                    print(f"Found client with spa_id: {spa_id}")
-                    # Update user with spa_id
-                    user.spa_id = spa_id
-                    db.commit()
-                else:
-                    # Create a new spa for this admin
-                    spa_id = str(uuid.uuid4())
-                    print(f"Creating new client with spa_id: {spa_id}")
-                    new_client = Client(
-                        spa_id=spa_id,
-                        name=f"{user.email}'s Spa",
-                        email=user.email,
-                        subscription_plan='basic',
-                        subscription_status='active',
-                        trial_ends_at=datetime.utcnow() + timedelta(days=14),
-                        config={
-                            'name': f"{user.email}'s Spa",
-                            'business_hours': {
-                                'weekday': {'open': '09:00', 'close': '17:00'},
-                                'weekend': {'open': '10:00', 'close': '15:00'}
-                            }
-                        },
-                        api_keys={},
-                        calendar_type='none',
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow()
-                    )
-                    db.add(new_client)
-                    
-                    # Update user with spa_id
-                    user.spa_id = spa_id
-                    db.commit()
-            
-            print(f"Creating access token with identity={user.id} and additional claims")
-            
+            # Create token with role
+            print(f"Creating access token for user ID: {user.id}, Role: {user.role}")
             access_token = create_access_token(
-                identity=str(user.id),  # This becomes the 'sub' claim
+                identity=str(user.id),
                 additional_claims={
-                    "user_id": str(user.id),
                     "role": user.role,
-                    "email": user.email,
-                    "spa_id": spa_id
+                    "spa_id": user.spa_id
                 }
             )
             
-            # Decode token for debugging
+            # Decode and verify token contents
             try:
-                decoded = jwt.decode(
-                    access_token, 
-                    options={"verify_signature": False}
-                )
-                print(f"Token created successfully.")
-                print(f"Decoded token payload: {decoded}")
+                decoded = jwt.decode(access_token, options={"verify_signature": False})
+                print("\nToken debug information:")
+                print(f"Full decoded token: {decoded}")
                 print(f"Token identity (sub): {decoded.get('sub')}")
-                print(f"Token spa_id claim: {decoded.get('spa_id')}")
+                print(f"Token role: {decoded.get('role')}")
+                print(f"Token spa_id: {decoded.get('spa_id')}")
             except Exception as e:
                 print(f"Error decoding token: {str(e)}")
             
@@ -187,8 +128,8 @@ def login():
             user.last_login = datetime.utcnow()
             db.commit()
             
-            # Prepare the response object
-            response_data = {
+            print("Login successful")
+            return jsonify({
                 "access_token": access_token,
                 "user": {
                     "id": user.id,
@@ -196,24 +137,18 @@ def login():
                     "role": user.role,
                     "spa_id": user.spa_id
                 }
-            }
-            print(f"Login successful for user: {user.email}")
-            print(f"Response data: {response_data['user']}")
+            })
             
-            return jsonify(response_data)
         except Exception as e:
             db.rollback()
             print(f"Database error: {str(e)}")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error traceback: {traceback.format_exc()}")
-            return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+            return jsonify({"error": str(e)}), 500
         finally:
             db.close()
+            
     except Exception as e:
-        print(f"Error processing login request: {str(e)}")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Error traceback: {traceback.format_exc()}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        print(f"Login error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @bp.route('/auth/debug-token', methods=['GET'])
 @jwt_required()
@@ -1038,8 +973,11 @@ def start_onboarding():
 
         # Generate access token
         access_token = create_access_token(
-            identity=spa_id,
-            additional_claims={"spa_id": spa_id}
+            identity=str(user.id),
+            additional_claims={
+                "role": user.role,
+                "spa_id": spa_id
+            }
         )
 
         # Send welcome email
@@ -1596,9 +1534,9 @@ def register():
             # Generate access token
             print("Generating access token...")
             access_token = create_access_token(
-                identity=spa_id,
+                identity=str(user.id),
                 additional_claims={
-                    "user_id": str(user.id),
+                    "role": user.role,
                     "spa_id": spa_id,
                     "requires_onboarding": True,
                     "onboarding_step": 1
@@ -2069,31 +2007,14 @@ def require_super_admin(f):
     def decorated_function(*args, **kwargs):
         try:
             claims = get_jwt()
-            print(f"DEBUG - Full JWT Claims: {claims}")
-            
-            role = claims.get('role')
-            print(f"DEBUG - Role from token: {role} (type: {type(role)})")
-            
-            if not role:
-                print("DEBUG - No role found in JWT claims")
-                return jsonify({'error': 'No role found in token'}), 403
-                
-            if not isinstance(role, str):
-                print(f"DEBUG - Role is not a string: {role}")
-                return jsonify({'error': 'Invalid role format'}), 403
-            
-            # Make role comparison case-insensitive
-            if role.lower() != 'super_admin':
-                print(f"DEBUG - Role mismatch: {role} != super_admin")
-                return jsonify({'error': 'Super admin access required'}), 403
-            
-            print("DEBUG - Role check passed, proceeding with request")
+            role = claims.get('role', '')
+            print(f"\nRole check: '{role}' == 'super_admin' -> {role == 'super_admin'}")
+            if role != 'super_admin':
+                return jsonify({'message': 'Insufficient permissions'}), 403
             return f(*args, **kwargs)
-            
         except Exception as e:
-            print(f"DEBUG - Error in require_super_admin: {str(e)}")
-            return jsonify({'error': 'Authentication error'}), 403
-            
+            print(f"Error: {str(e)}")
+            return jsonify({'message': 'Error checking permissions'}), 403
     return decorated_function
 
 @bp.route('/admin/platform/spas', methods=['GET'])

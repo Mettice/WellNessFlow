@@ -12,11 +12,11 @@ RUN mkdir -p instance
 RUN chmod 777 instance
 
 # Copy requirements first to leverage Docker cache
-COPY ./requirements.txt /app/requirements.txt
+COPY requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
-COPY . /app/
+COPY . .
 
 # Set environment variables
 ENV FLASK_APP=app.py

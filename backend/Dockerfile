@@ -3,19 +3,20 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update
+RUN apt-get install -y build-essential
+RUN rm -rf /var/lib/apt/lists/*
 
 # Create instance directory for SQLite database
-RUN mkdir -p instance && chmod 777 instance
+RUN mkdir -p instance
+RUN chmod 777 instance
 
 # Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+COPY ./requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
-COPY . .
+COPY . /app/
 
 # Set environment variables
 ENV FLASK_APP=app.py

@@ -1,9 +1,10 @@
 [build]
-dockerfilePath = "./backend/Dockerfile"
 builder = "DOCKERFILE"
+dockerfilePath = "backend/Dockerfile"
+context = "backend"
 
 [deploy]
-startCommand = "cd backend && gunicorn --bind 0.0.0.0:$PORT app:app"
+startCommand = "gunicorn --bind 0.0.0.0:$PORT app:app"
 restartPolicyType = "on_failure"
 
 [env]

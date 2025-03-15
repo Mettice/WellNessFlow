@@ -8,7 +8,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first
-COPY requirements.txt .
+COPY requirements.txt requirements.txt
 
 # Install Python dependencies
 RUN pip install -r requirements.txt
@@ -25,7 +25,7 @@ ENV FLASK_ENV=production
 ENV PORT=5000
 
 # Expose the port
-EXPOSE 5000
+EXPOSE $PORT
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"] 
+CMD gunicorn --bind 0.0.0.0:$PORT app:app 

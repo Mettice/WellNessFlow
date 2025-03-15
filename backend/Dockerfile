@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+# Set working directory
 WORKDIR /app
 
 # Install system dependencies
@@ -11,12 +12,11 @@ RUN rm -rf /var/lib/apt/lists/*
 RUN mkdir -p instance
 RUN chmod 777 instance
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the entire application
+COPY . /app/
 
-# Copy the rest of the application
-COPY . .
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Set environment variables
 ENV FLASK_APP=app.py

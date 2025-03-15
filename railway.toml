@@ -1,14 +1,10 @@
 [build]
+dockerfilePath = "./backend/Dockerfile"
 builder = "DOCKERFILE"
-dockerfilePath = "backend/Dockerfile"
-context = "."
-watchPatterns = ["backend/**/*"]
 
 [deploy]
-startCommand = "gunicorn --bind 0.0.0.0:$PORT app:app"
+startCommand = "cd backend && gunicorn --bind 0.0.0.0:$PORT app:app"
 restartPolicyType = "on_failure"
-healthcheckPath = "/api/health"
-healthcheckTimeout = 100
 
 [env]
 FLASK_APP = "app.py"

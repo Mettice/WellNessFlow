@@ -20,8 +20,8 @@ RUN mkdir -p instance && chmod 777 instance
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
-# Expose the port
-EXPOSE $PORT
+# Expose default port (Railway will override at runtime)
+EXPOSE 5000
 
-# Run the application
-CMD gunicorn --bind 0.0.0.0:$PORT app:app 
+# Run the application with dynamic port binding
+CMD gunicorn --bind 0.0.0.0:${PORT:-5000} app:app 

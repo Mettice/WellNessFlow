@@ -1,8 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.PROD 
-  ? import.meta.env.VITE_API_URL 
-  : '';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 // Add default headers and credentials
 axios.defaults.withCredentials = true;
@@ -16,13 +14,14 @@ axios.interceptors.request.use((config) => {
     config.headers['spa-id'] = spaId;
   }
 
-  // Handle API URL prefix
-  if (!config.url?.startsWith('/api') && !config.url?.startsWith('http')) {
-    config.url = `/api${config.url}`;
-  }
-
-  // In production, ensure full URL is used
-  if (import.meta.env.PROD && !config.url?.startsWith('http')) {
+  // Handle API URL prefix and full URL construction
+  if (!config.url?.startsWith('http')) {
+    // If URL doesn't start with /api, add it
+    if (!config.url?.startsWith('/api')) {
+      config.url = `/api${config.url}`;
+    }
+    
+    // In production or if API_BASE_URL is set, prepend the full URL
     config.url = `${API_BASE_URL}${config.url}`;
   }
 
@@ -30,6 +29,7 @@ axios.interceptors.request.use((config) => {
     url: config.url,
     method: config.method,
     baseURL: API_BASE_URL,
+    headers: config.headers,
     env: import.meta.env.PROD ? 'production' : 'development'
   });
 
@@ -45,6 +45,7 @@ axios.interceptors.response.use(
       method: error.config?.method,
       status: error.response?.status,
       data: error.response?.data,
+      headers: error.config?.headers,
       env: import.meta.env.PROD ? 'production' : 'development'
     });
     return Promise.reject(error);

@@ -21,14 +21,16 @@ def create_app(test_config=None):
     CORS(app, resources={
         r"/*": {
             "origins": [
-                "https://*.vercel.app",  # Allow all Vercel preview and production domains
+                "https://wellnessflow.vercel.app",  # Production Vercel domain
+                "https://*.vercel.app",  # All Vercel preview deployments
                 "http://localhost:3000",  # For local development
                 "http://localhost:5173"   # For Vite dev server
             ],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
+            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "spa-id"],
             "expose_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True
+            "supports_credentials": True,
+            "max_age": 600
         }
     })
     

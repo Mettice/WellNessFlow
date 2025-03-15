@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -11,6 +13,7 @@ axios.interceptors.request.use((config) => {
   // Add spa-id header if available
   const spaId = localStorage.getItem('spa-id');
   if (spaId) {
+    config.headers = config.headers || {};
     config.headers['spa-id'] = spaId;
   }
 

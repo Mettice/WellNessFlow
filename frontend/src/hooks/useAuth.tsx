@@ -25,6 +25,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,7 +35,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const token = localStorage.getItem('token');
     
-    // Set default authorization header if token exists
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
@@ -42,6 +43,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       (config) => {
         const token = localStorage.getItem('token');
         if (token) {
+          config.headers = config.headers || {};
           config.headers.Authorization = `Bearer ${token}`;
         }
         return config;
@@ -68,7 +70,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     try {
-      const response = await axios.get('/api/auth/me');
+      const response = await axios.get<User>(`${API_BASE_URL}/api/auth/me`);
       setUser(response.data);
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -81,7 +83,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await axios.post<AuthResponse>('/api/auth/login', {
+      console.log('Making login request to:', `${API_BASE_URL}/api/auth/login`);
+      const response = await axios.post<AuthResponse>(`${API_BASE_URL}/api/auth/login`, {
         email,
         password,
       });
@@ -105,8 +108,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const register = async (businessName: string, email: string, password: string) => {
     try {
-      const response = await axios.post<AuthResponse>('/api/auth/register', {
-        business_name: businessName,
+      const response = await axios.post<AuthResponse>(`${API_BASE_URL}/api/auth/register`, {
+        businessName,
         email,
         password,
       });

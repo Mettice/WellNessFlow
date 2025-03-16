@@ -1,7 +1,7 @@
 import os
 import sys
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 # Load environment variables first
 load_dotenv(override=True)
@@ -17,24 +17,44 @@ from flask_cors import CORS
 def create_app(test_config=None):
     app = Flask(__name__)
     
-    # Configure CORS to allow requests from Vercel domain
-    CORS(app, resources={
-        r"/*": {
-            "origins": [
-                "https://wellnessflow-djtpbxf7z-dions-projects-0087c2a0.vercel.app",  # Your specific Vercel domain
-                "https://wellnessflow.vercel.app",  # Production Vercel domain
-                "https://*.vercel.app",  # All Vercel preview deployments
-                "http://localhost:3000",  # For local development
-                "http://localhost:5173"   # For Vite dev server
-            ],
-            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization", "spa-id", "Access-Control-Allow-Origin"],
-            "expose_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True,
-            "max_age": 600
-        }
-    })
-    
+    # List of allowed origins
+    ALLOWED_ORIGINS = [
+        "https://wellnessflow-git-spacontent-dions-projects-0087c2a0.vercel.app",
+        "https://wellnessflow-gwpt4crh9-dions-projects-0087c2a0.vercel.app",
+        "https://wellnessflow.vercel.app",
+        "https://wellnessflow-dbirvo628-dions-projects-0087c2a0.vercel.app",
+        "https://wellnessflow-e5k8mppqc-dions-projects-0087c2a0.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173"
+    ]
+
+    # Configure CORS with dynamic origin handling
+    @app.after_request
+    def after_request(response):
+        origin = request.headers.get('Origin')
+        if origin:
+            # Check if the origin is allowed or matches *.vercel.app
+            is_vercel = origin.endswith('.vercel.app')
+            if origin in ALLOWED_ORIGINS or is_vercel:
+                response.headers.add('Access-Control-Allow-Origin', origin)
+                response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,spa-id')
+                response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+                response.headers.add('Access-Control-Allow-Credentials', 'true')
+                response.headers.add('Access-Control-Expose-Headers', 'Content-Type,Authorization')
+        return response
+
+    # Add debug route to list all registered routes
+    @app.route('/debug/routes')
+    def list_routes():
+        routes = []
+        for rule in app.url_map.iter_rules():
+            routes.append({
+                'endpoint': rule.endpoint,
+                'methods': list(rule.methods),
+                'path': str(rule)
+            })
+        return jsonify(routes)
+
     # Add root route for API verification
     @app.route('/')
     def root():

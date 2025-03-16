@@ -4,8 +4,7 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-// Add default headers and credentials
-axios.defaults.withCredentials = true;
+// Add default headers
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 
 // Add request interceptor
@@ -17,14 +16,8 @@ axios.interceptors.request.use((config) => {
     config.headers['spa-id'] = spaId;
   }
 
-  // Handle API URL prefix and full URL construction
+  // Handle API URL construction
   if (!config.url?.startsWith('http')) {
-    // If URL doesn't start with /api, add it
-    if (!config.url?.startsWith('/api')) {
-      config.url = `/api${config.url}`;
-    }
-    
-    // In production or if API_BASE_URL is set, prepend the full URL
     config.url = `${API_BASE_URL}${config.url}`;
   }
 
@@ -58,7 +51,7 @@ axios.interceptors.response.use(
 export const api = {
   content: {
     generate: async (type: 'text' | 'image' | 'video', prompt: string, options: any) => {
-      const response = await axios.post(`/content/generate/${type}`, {
+      const response = await axios.post(`/api/content/generate/${type}`, {
         type,
         prompt,
         options
@@ -67,7 +60,7 @@ export const api = {
     },
 
     getHistory: async () => {
-      const response = await axios.get('/content/history');
+      const response = await axios.get('/api/content/history');
       return response.data;
     },
 
@@ -80,7 +73,7 @@ export const api = {
         metadata?: Record<string, any>;
         scheduled_for: string;
       }) => {
-        const response = await axios.post('/content/schedule', data);
+        const response = await axios.post('/api/content/schedule', data);
         return response.data;
       },
 
@@ -89,7 +82,7 @@ export const api = {
         platform?: 'blog' | 'facebook' | 'instagram' | 'email';
         date?: string;
       }) => {
-        const response = await axios.get('/content/schedule', {
+        const response = await axios.get('/api/content/schedule', {
           params: filters
         });
         return response.data;
@@ -102,12 +95,12 @@ export const api = {
         content: string;
         metadata: Record<string, any>;
       }>) => {
-        const response = await axios.patch(`/content/schedule/${id}`, data);
+        const response = await axios.patch(`/api/content/schedule/${id}`, data);
         return response.data;
       },
 
       delete: async (id: string) => {
-        await axios.delete(`/content/schedule/${id}`);
+        await axios.delete(`/api/content/schedule/${id}`);
       }
     }
   }

@@ -1,9 +1,9 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "backend/Dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python backend/scripts/migrate_db.py && gunicorn --chdir backend app:app"
+startCommand = "python scripts/migrate_db.py && gunicorn app:app"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 

@@ -2,6 +2,11 @@ import os
 import sys
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Load environment variables first
 load_dotenv(override=True)
@@ -10,11 +15,23 @@ load_dotenv(override=True)
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask
-from models.database import init_db
+from models.database import init_db, engine
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
+from sqlalchemy import text
+
+def test_db_connection():
+    try:
+        with engine.connect() as connection:
+            result = connection.execute(text("SELECT 1"))
+            logger.info("Database connection successful")
+            return True
+    except Exception as e:
+        logger.error(f"Database connection failed: {str(e)}")
+        return False
 
 def create_app(test_config=None):
+    logger.info("Starting application creation...")
     app = Flask(__name__)
     
     # Configure CORS - More permissive for debugging
@@ -22,14 +39,13 @@ def create_app(test_config=None):
          supports_credentials=True,
          resources={r"/*": {"origins": "*"}})
 
+    logger.info("CORS configured")
+
     # Debug CORS requests
     @app.before_request
     def debug_request():
-        print(f"\nIncoming request:")
-        print(f"Method: {request.method}")
-        print(f"Headers: {dict(request.headers)}")
-        print(f"URL: {request.url}")
-        print(f"Origin: {request.headers.get('Origin')}")
+        logger.info(f"\nIncoming request: {request.method} {request.url}")
+        logger.info(f"Headers: {dict(request.headers)}")
 
     # Add CORS headers to all responses
     @app.after_request
@@ -37,9 +53,7 @@ def create_app(test_config=None):
         origin = request.headers.get('Origin', '*')
         
         # Debug response
-        print(f"\nOutgoing response:")
-        print(f"Status: {response.status}")
-        print(f"Headers before: {dict(response.headers)}")
+        logger.info(f"\nOutgoing response: {response.status}")
         
         # Set CORS headers
         response.headers['Access-Control-Allow-Origin'] = origin
@@ -47,16 +61,16 @@ def create_app(test_config=None):
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-Request-With, spa-id'
         
-        print(f"Headers after: {dict(response.headers)}")
         return response
 
-    # Add debug route for CORS testing
-    @app.route('/cors-test')
-    def cors_test():
+    # Health check endpoint
+    @app.route('/health')
+    def health_check():
+        db_status = test_db_connection()
         return jsonify({
-            "status": "success",
-            "message": "CORS test successful",
-            "headers_received": dict(request.headers)
+            "status": "healthy" if db_status else "unhealthy",
+            "database": "connected" if db_status else "disconnected",
+            "environment": os.getenv('FLASK_ENV', 'unknown')
         })
 
     # Add root route for API verification
@@ -64,35 +78,22 @@ def create_app(test_config=None):
     def root():
         return jsonify({
             "status": "success",
-            "message": "WellnessFlow API is running"
+            "message": "WellnessFlow API is running",
+            "environment": os.getenv('FLASK_ENV', 'unknown')
         })
 
-    # Get OpenAI API key and ensure it's available
+    # Get OpenAI API key but don't fail if not available
     openai_api_key = os.getenv('OPENAI_API_KEY')
     if not openai_api_key:
-        print("Warning: OpenAI API key not found in environment")
-        raise ValueError("OpenAI API key not found in environment variables")
-    
-    if not (openai_api_key.startswith('sk-') or openai_api_key.startswith('sk-proj-')):
-        print("Warning: Invalid OpenAI API key format")
-        raise ValueError("OpenAI API key must start with 'sk-' or 'sk-proj-'")
-    
-    print(f"OpenAI API key validation:")
-    print(f"- Length: {len(openai_api_key)}")
-    print(f"- Format: {'Valid' if openai_api_key.startswith('sk-') or openai_api_key.startswith('sk-proj-') else 'Invalid'}")
-    
-    # Store API key in app config
-    app.config['OPENAI_API_KEY'] = openai_api_key
-    
-    # Configure OpenAI client
-    import openai
-    openai.api_key = openai_api_key
+        logger.warning("OpenAI API key not found in environment")
+    else:
+        logger.info("OpenAI API key configured")
+        import openai
+        openai.api_key = openai_api_key
     
     # Basic app configuration
     jwt_secret = os.getenv('JWT_SECRET_KEY', 'dev-jwt-secret')
-    print(f"\nJWT Configuration:")
-    print(f"- Secret key length: {len(jwt_secret)}")
-    print(f"- Using default: {'Yes' if jwt_secret == 'dev-jwt-secret' else 'No'}")
+    logger.info("Configuring JWT")
     
     app.config.from_mapping(
         SECRET_KEY=os.getenv('SECRET_KEY', 'dev'),
@@ -115,26 +116,31 @@ def create_app(test_config=None):
 
     # Initialize JWT
     jwt = JWTManager(app)
+    logger.info("JWT initialized")
 
     # Initialize database
-    with app.app_context():
-        init_db()
-
-    # Add error handling middleware
-    @app.errorhandler(422)
-    def handle_validation_error(error):
-        return jsonify({
-            'error': 'Invalid request data',
-            'message': str(error.description)
-        }), 422
+    try:
+        with app.app_context():
+            init_db()
+            test_db_connection()  # Test connection after initialization
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {str(e)}")
+        # Don't fail startup, let health check endpoint report the issue
 
     # Register blueprints
-    from api.routes import bp as api_bp
-    app.register_blueprint(api_bp)
+    try:
+        from api.routes import bp as api_bp
+        app.register_blueprint(api_bp)
+        logger.info("API routes registered")
+    except Exception as e:
+        logger.error(f"Failed to register blueprints: {str(e)}")
 
+    logger.info("Application creation completed")
     return app
 
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.getenv('PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)

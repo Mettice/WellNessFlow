@@ -2,9 +2,16 @@ import os
 import sys
 from werkzeug.security import generate_password_hash
 from datetime import datetime
+from dotenv import load_dotenv
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Force production mode before importing models
+os.environ['FLASK_ENV'] = 'production'
+
+# Load environment variables
+load_dotenv()
 
 from models.database import SessionLocal, User
 

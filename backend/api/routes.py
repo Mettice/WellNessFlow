@@ -7,7 +7,7 @@ from .chatbot.calendar import CalendarIntegration
 from .services.mock_calendar import MockCalendarService
 from datetime import datetime, timedelta
 import stripe
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, inspect
 from models.database import SessionLocal, Appointment, Client, User, SubscriptionPlan, SpaService, Location, Document, DocumentChunk, SpaProfile, BrandSettings, PlatformMetrics, PlatformSettings
 import os
 import uuid
@@ -66,9 +66,18 @@ def login():
 
         db = SessionLocal()
         try:
-            print("Querying database for user...")
+            from sqlalchemy import inspect
+            inspector = inspect(db.bind)
+            print(f"\nDatabase Debug:")
+            print(f"Database URL: {db.bind.url}")
+            print(f"Tables in database: {inspector.get_table_names()}")
+            
+            print("\nQuerying database for user...")
             user = db.query(User).filter_by(email=email).first()
             print(f"User found: {user is not None}")
+            
+            if user:
+                print(f"User details: ID={user.id}, Email={user.email}, Role={user.role}")
             
             if not user:
                 print("User not found")
@@ -77,6 +86,9 @@ def login():
             if not user.is_active:
                 print("User account is inactive")
                 return jsonify({"error": "Account is inactive"}), 401
+            
+            print(f"Stored password hash: {user.password_hash}")
+            print(f"Checking password...")
             
             if check_password_hash(user.password_hash, password):
                 print("Password verified successfully")
@@ -107,12 +119,14 @@ def login():
             return jsonify({"error": "Invalid credentials"}), 401
         except Exception as e:
             print(f"Database error: {str(e)}")
+            print(f"Full traceback: {traceback.format_exc()}")
             return jsonify({"error": "Internal server error"}), 500
         finally:
             db.close()
     except Exception as e:
         print(f"Error in login route: {str(e)}")
         print(f"Error type: {type(e).__name__}")
+        print(f"Full traceback: {traceback.format_exc()}")
         return jsonify({"error": "Internal server error"}), 500
 
 @bp.route('/auth/debug-token', methods=['GET'])
@@ -601,12 +615,11 @@ def get_bot_metrics():
                 for service_name, count in services_query
             ] if services_query else []
             
-            # Calculate average response time
+            # Calculate average response time using PostgreSQL's EXTRACT function
             avg_response_time = db.query(
                 func.avg(
-                    func.julianday(Appointment.appointment_datetime) - 
-                    func.julianday(Appointment.appointment_datetime)  
-                ) * 24 * 60  # Convert to minutes
+                    func.extract('epoch', Appointment.created_at - Appointment.created_at) / 60  # Convert to minutes
+                )
             ).filter(
                 Appointment.spa_id == spa_id,
                 Appointment.appointment_datetime >= start_date

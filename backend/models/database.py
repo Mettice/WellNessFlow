@@ -3,13 +3,25 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import os
 from datetime import datetime
+from dotenv import load_dotenv
 
-# Create the database directory if it doesn't exist
-os.makedirs('instance', exist_ok=True)
+# Load environment variables
+load_dotenv()
+
+# Get the DATABASE_URL from environment variables
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+if not DATABASE_URL:
+    raise ValueError("No DATABASE_URL found in environment variables")
+
+# Convert postgres:// to postgresql:// if necessary
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+print(f"Database: Using URL: {DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else DATABASE_URL}")
 
 # Create database engine
-SQLALCHEMY_DATABASE_URL = "sqlite:///instance/spa.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(DATABASE_URL)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -135,6 +147,8 @@ class Appointment(Base):
     reminder_sent = Column(Boolean, default=False)
     feedback_sent = Column(Boolean, default=False)
     notes = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     service = relationship("SpaService", back_populates="appointments")
     location = relationship("Location", back_populates="appointments")
@@ -240,11 +254,10 @@ class ChatConversation(Base):
     __tablename__ = "chat_conversations"
     
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(String, index=True, nullable=False)
-    spa_id = Column(String, ForeignKey("clients.spa_id"))
-    user_id = Column(Integer, ForeignKey("users.id"))
-    client_email = Column(String)
-    client_name = Column(String)
-    messages = Column(String)  # For JSON storage
+    session_id = Column(String, unique=True, index=True)
+    spa_id = Column(String, index=True)
+    client_name = Column(String, nullable=True)
+    client_email = Column(String, nullable=True)
+    messages = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

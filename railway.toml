@@ -3,13 +3,14 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python scripts/migrate_db.py && gunicorn --bind 0.0.0.0:$PORT app:app --workers 4 --threads 2 --timeout 120"
+startCommand = "python scripts/migrate_db.py && gunicorn --bind 0.0.0.0:$PORT --log-level debug --access-logfile - --error-logfile - app:app --workers 4 --threads 2 --timeout 120"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
 [env]
 FLASK_APP = "app.py"
 FLASK_ENV = "production"
-FLASK_DEBUG = "0"
+FLASK_DEBUG = "1"
 PYTHONUNBUFFERED = "1"
+LOG_LEVEL = "DEBUG"
 PORT = "5000" 

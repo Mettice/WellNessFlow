@@ -17,46 +17,47 @@ from flask_cors import CORS
 def create_app(test_config=None):
     app = Flask(__name__)
     
-    # Configure CORS
-    origins = [
-        "http://localhost:5000",
-        "http://localhost:5173",
-        "https://wellnessflow-git-spacontent-dions-projects-0087c2a0.vercel.app",
-        "https://wellnessflow.vercel.app",
-        "https://wellnessflow-production.up.railway.app"
-        
-    ]
-    
-    CORS(app, resources={
-        r"/*": {
-            "origins": origins,
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization", "spa-id"],
-            "expose_headers": ["Authorization"],
-            "supports_credentials": True
-        }
-    })
+    # Configure CORS - More permissive for debugging
+    CORS(app, 
+         supports_credentials=True,
+         resources={r"/*": {"origins": "*"}})
+
+    # Debug CORS requests
+    @app.before_request
+    def debug_request():
+        print(f"\nIncoming request:")
+        print(f"Method: {request.method}")
+        print(f"Headers: {dict(request.headers)}")
+        print(f"URL: {request.url}")
+        print(f"Origin: {request.headers.get('Origin')}")
 
     # Add CORS headers to all responses
     @app.after_request
     def after_request(response):
-        origin = request.headers.get('Origin')
-        if origin in origins:
-            response.headers['Access-Control-Allow-Origin'] = origin
+        origin = request.headers.get('Origin', '*')
+        
+        # Debug response
+        print(f"\nOutgoing response:")
+        print(f"Status: {response.status}")
+        print(f"Headers before: {dict(response.headers)}")
+        
+        # Set CORS headers
+        response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-Request-With, spa-id'
+        
+        print(f"Headers after: {dict(response.headers)}")
         return response
 
-    # Add debug route to list all registered routes
-    @app.route('/debug/routes')
-    def list_routes():
-        routes = []
-        for rule in app.url_map.iter_rules():
-            routes.append({
-                'endpoint': rule.endpoint,
-                'methods': list(rule.methods),
-                'path': str(rule)
-            })
-        return jsonify(routes)
+    # Add debug route for CORS testing
+    @app.route('/cors-test')
+    def cors_test():
+        return jsonify({
+            "status": "success",
+            "message": "CORS test successful",
+            "headers_received": dict(request.headers)
+        })
 
     # Add root route for API verification
     @app.route('/')

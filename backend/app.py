@@ -17,16 +17,34 @@ from flask_cors import CORS
 def create_app(test_config=None):
     app = Flask(__name__)
     
-    # Configure CORS to allow all origins in production
+    # Configure CORS
+    origins = [
+        "http://localhost:5000",
+        "http://localhost:5173",
+        "https://wellnessflow-git-spacontent-dions-projects-0087c2a0.vercel.app",
+        "https://wellnessflow.vercel.app",
+        "https://wellnessflow-production.up.railway.app"
+        
+    ]
+    
     CORS(app, resources={
         r"/*": {
-            "origins": "*",
+            "origins": origins,
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization", "spa-id"],
-            "supports_credentials": True,
-            "expose_headers": ["Authorization"]
+            "expose_headers": ["Authorization"],
+            "supports_credentials": True
         }
     })
+
+    # Add CORS headers to all responses
+    @app.after_request
+    def after_request(response):
+        origin = request.headers.get('Origin')
+        if origin in origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
 
     # Add debug route to list all registered routes
     @app.route('/debug/routes')

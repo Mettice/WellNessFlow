@@ -19,26 +19,39 @@ def create_app(test_config=None):
     
     # Configure CORS with proper settings
     CORS(app, resources={
-    r"/*": {
-        "origins": ["http://localhost:5174", "http://127.0.0.1:5174"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "spa-id"],
-        "supports_credentials": True
-    }
-})
+        r"/*": {
+            "origins": [
+                "http://localhost:5174",
+                "http://127.0.0.1:5174",
+                "https://wellnessflow-git-spacontent-dions-projects-0087c2a0.vercel.app",
+                "https://wellnessflow-production.up.railway.app"
+            ],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "spa-id"],
+            "supports_credentials": True,
+            "expose_headers": ["Authorization"]
+        }
+    })
     
     # List of allowed origins for dynamic CORS
-    ALLOWED_ORIGINS = ["http://localhost:5174"]
+    ALLOWED_ORIGINS = [
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "https://wellnessflow-git-spacontent-dions-projects-0087c2a0.vercel.app",
+        "https://wellnessflow-production.up.railway.app"
+    ]
 
     # Configure CORS with dynamic origin handling
     @app.after_request
     def after_request(response):
         origin = request.headers.get('Origin')
         if origin:
-            # Check if the origin is allowed or matches *.vercel.app
+            # Check if the origin is allowed or matches *.vercel.app or *.railway.app
             is_vercel = origin.endswith('.vercel.app')
-            is_localhost = origin.startswith('http://localhost:')
-            if origin in ALLOWED_ORIGINS or is_vercel or is_localhost:
+            is_railway = origin.endswith('.railway.app')
+            is_localhost = origin.startswith('http://localhost:') or origin.startswith('http://127.0.0.1:')
+            
+            if origin in ALLOWED_ORIGINS or is_vercel or is_railway or is_localhost:
                 response.headers['Access-Control-Allow-Origin'] = origin
                 response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,spa-id'
                 response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'

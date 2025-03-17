@@ -23,6 +23,9 @@ from .utils import allowed_file
 import json
 from functools import wraps
 import traceback
+from flask import Blueprint, request, jsonify, make_response
+from models.database import ChatConversation
+
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -550,27 +553,31 @@ def get_bot_metrics():
                 return jsonify({"error": "Unauthorized - No spa_id in token"}), 401
             
             # Get time range from query params (default to last 30 days)
-            days = int(request.args.get('days', 30))
+            days = request.args.get('days', 30)
+            try:
+                days = int(days)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid days parameter"}), 422
+                
             start_date = datetime.now() - timedelta(days=days)
             
             # Get total conversations (all appointments)
             total_conversations = db.query(func.count(Appointment.id)).filter(
                 Appointment.spa_id == spa_id,
-                Appointment.created_at >= start_date
+                Appointment.appointment_datetime >= start_date
             ).scalar() or 0
             
             # Get successful bookings (confirmed appointments)
             successful_bookings = db.query(func.count(Appointment.id)).filter(
                 Appointment.spa_id == spa_id,
                 Appointment.status == 'confirmed',
-                Appointment.created_at >= start_date
+                Appointment.appointment_datetime >= start_date
             ).scalar() or 0
             
             # Calculate conversion rate safely
             conversion_rate = (successful_bookings / total_conversations * 100) if total_conversations > 0 else 0
             
-            # Get popular services with proper null handling
-            popular_services = []
+            # Get popular services
             services_query = db.query(
                 SpaService.name,
                 func.count(Appointment.id).label('booking_count')
@@ -579,7 +586,7 @@ def get_bot_metrics():
                 and_(
                     Appointment.service_id == SpaService.id,
                     Appointment.spa_id == spa_id,
-                    Appointment.created_at >= start_date
+                    Appointment.appointment_datetime >= start_date
                 )
             ).filter(
                 SpaService.spa_id == spa_id
@@ -592,36 +599,17 @@ def get_bot_metrics():
             popular_services = [
                 {'service': service_name, 'count': count}
                 for service_name, count in services_query
-            ]
+            ] if services_query else []
             
-            # Get peak booking hours with proper null handling
-            peak_hours = []
-            hours_query = db.query(
-                func.strftime('%H', Appointment.datetime).label('hour'),
-                func.count(Appointment.id).label('booking_count')
-            ).filter(
-                Appointment.spa_id == spa_id,
-                Appointment.created_at >= start_date
-            ).group_by(
-                func.strftime('%H', Appointment.datetime)
-            ).order_by(
-                func.count(Appointment.id).desc()
-            ).all()
-            
-            peak_hours = [
-                {'hour': hour or '00', 'bookings': count}
-                for hour, count in hours_query
-            ]
-            
-            # Calculate average response time with safe default
+            # Calculate average response time
             avg_response_time = db.query(
                 func.avg(
-                    func.julianday(Appointment.created_at) - 
-                    func.julianday(Appointment.datetime)
+                    func.julianday(Appointment.appointment_datetime) - 
+                    func.julianday(Appointment.appointment_datetime)  
                 ) * 24 * 60  # Convert to minutes
             ).filter(
                 Appointment.spa_id == spa_id,
-                Appointment.created_at >= start_date
+                Appointment.appointment_datetime >= start_date
             ).scalar() or 0
             
             avg_response_time_str = f"{round(avg_response_time, 1)} min"
@@ -631,24 +619,20 @@ def get_bot_metrics():
                 'successfulBookings': successful_bookings,
                 'averageResponseTime': avg_response_time_str,
                 'conversionRate': round(conversion_rate, 1),
-                'popularServices': popular_services or [],
-                'peakHours': peak_hours or []
+                'popularServices': popular_services,
+                'peakHours': []
             })
             
+        except Exception as e:
+            db.rollback()
+            print(f"Database error in get_bot_metrics: {str(e)}")
+            return jsonify({"error": "Database error"}), 500
         finally:
             db.close()
             
     except Exception as e:
         print(f"Error in get_bot_metrics: {str(e)}")
-        print(f"Full traceback: {traceback.format_exc()}")
-        return jsonify({
-            'totalConversations': 0,
-            'successfulBookings': 0,
-            'averageResponseTime': '0 min',
-            'conversionRate': 0,
-            'popularServices': [],
-            'peakHours': []
-        }), 200  # Return empty metrics instead of 500 error
+        return jsonify({"error": str(e)}), 500
 
 @bp.route('/payment/process', methods=['POST'])
 def process_payment():
@@ -1021,9 +1005,9 @@ def get_appointments():
         
         # Apply additional filters
         if filter_type == 'upcoming':
-            query = query.filter(Appointment.datetime >= datetime.utcnow())
+            query = query.filter(Appointment.appointment_datetime >= datetime.utcnow())
         elif filter_type == 'past':
-            query = query.filter(Appointment.datetime < datetime.utcnow())
+            query = query.filter(Appointment.appointment_datetime < datetime.utcnow())
         elif filter_type == 'cancelled':
             query = query.filter(Appointment.status == 'cancelled')
             
@@ -1034,7 +1018,7 @@ def get_appointments():
             'client_name': apt.client_name,
             'client_email': apt.client_email,
             'client_phone': apt.client_phone,
-            'datetime': apt.datetime.isoformat(),
+            'datetime': apt.appointment_datetime.isoformat(),
             'status': apt.status,
             'service': apt.service.name if apt.service else None,
             'location': apt.location.name if apt.location else None,
@@ -2022,56 +2006,73 @@ def suspend_spa(spa_id):
 @bp.route('/admin/metrics/daily', methods=['GET'])
 @jwt_required()
 def get_daily_metrics():
-    db = SessionLocal()
     try:
-        claims = get_jwt()
-        spa_id = claims.get('spa_id')
-        role = claims.get('role')
-        
-        if not spa_id:
-            return jsonify({"error": "Unauthorized - No spa_id in token"}), 401
-
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow = today + timedelta(days=1)
-        
-        # Get all appointments for today
-        appointments = db.query(Appointment).filter(
-            Appointment.spa_id == spa_id,
-            Appointment.datetime >= today,
-            Appointment.datetime < tomorrow
-        ).all()
-        
-        # Calculate metrics - safely handle empty case
-        completed = sum(1 for apt in appointments if apt.status == 'completed')
-        upcoming = sum(1 for apt in appointments if apt.status == 'confirmed')
-        
-        # Calculate revenue with extra safety checks
-        revenue = 0
-        for apt in appointments:
-            if apt.status == 'completed' and hasattr(apt, 'service') and apt.service is not None:
-                if hasattr(apt.service, 'price') and apt.service.price is not None:
-                    revenue += apt.service.price
-        
-        response_data = {
-            'total_appointments': len(appointments),
-            'completed_appointments': completed,
-            'upcoming_appointments': upcoming,
-            'revenue_today': revenue
-        }
-        
-        return jsonify(response_data)
-        
+        db = SessionLocal()
+        try:
+            # Get claims from JWT
+            claims = get_jwt()
+            spa_id = claims.get('spa_id')
+            
+            if not spa_id:
+                return jsonify({"error": "Unauthorized - No spa_id in token"}), 401
+            
+            # Get today's date range
+            today = datetime.now().date()
+            start_of_day = datetime.combine(today, datetime.min.time())
+            end_of_day = datetime.combine(today, datetime.max.time())
+            
+            # Get total appointments for today
+            total_appointments = db.query(func.count(Appointment.id)).filter(
+                Appointment.spa_id == spa_id,
+                Appointment.appointment_datetime >= start_of_day,  
+                Appointment.appointment_datetime <= end_of_day     
+            ).scalar() or 0
+            
+            # Get completed appointments
+            completed_appointments = db.query(func.count(Appointment.id)).filter(
+                Appointment.spa_id == spa_id,
+                Appointment.appointment_datetime >= start_of_day,  
+                Appointment.appointment_datetime <= end_of_day,    
+                Appointment.status == 'completed'
+            ).scalar() or 0
+            
+            # Calculate revenue
+            revenue = db.query(func.sum(SpaService.price)).join(
+                Appointment,
+                and_(
+                    Appointment.service_id == SpaService.id,
+                    Appointment.spa_id == spa_id,
+                    Appointment.appointment_datetime >= start_of_day,
+                    Appointment.appointment_datetime <= end_of_day,
+                    Appointment.status.in_(['completed', 'confirmed'])
+                )
+            ).scalar() or 0
+            
+            # Get upcoming appointments
+            upcoming_appointments = db.query(func.count(Appointment.id)).filter(
+                Appointment.spa_id == spa_id,
+                Appointment.appointment_datetime >= datetime.now(),
+                Appointment.appointment_datetime <= end_of_day,
+                Appointment.status == 'confirmed'
+            ).scalar() or 0
+            
+            return jsonify({
+                'total_appointments': total_appointments,
+                'completed_appointments': completed_appointments,
+                'revenue_today': float(revenue),
+                'upcoming_appointments': upcoming_appointments
+            })
+            
+        except Exception as e:
+            db.rollback()
+            print(f"Database error in get_daily_metrics: {str(e)}")
+            return jsonify({"error": "Database error"}), 500
+        finally:
+            db.close()
+            
     except Exception as e:
         print(f"Error in get_daily_metrics: {str(e)}")
-        # Return empty metrics with success status code even on error
-        return jsonify({
-            'total_appointments': 0,
-            'completed_appointments': 0,
-            'upcoming_appointments': 0,
-            'revenue_today': 0
-        })
-    finally:
-        db.close()
+        return jsonify({"error": str(e)}), 500
 
 @bp.route('/admin/appointments/today', methods=['GET'])
 @jwt_required()
@@ -2090,9 +2091,9 @@ def get_today_appointments():
         # Get all appointments for today
         appointments = db.query(Appointment).filter(
             Appointment.spa_id == spa_id,
-            Appointment.datetime >= today,
-            Appointment.datetime < tomorrow
-        ).order_by(Appointment.datetime.asc()).all()
+            Appointment.appointment_datetime >= today,
+            Appointment.appointment_datetime < tomorrow
+        ).order_by(Appointment.appointment_datetime.asc()).all()
         
         # Safely format response with extra null checks
         response = []
@@ -2105,7 +2106,7 @@ def get_today_appointments():
                 'id': apt.id,
                 'client_name': apt.client_name,
                 'service': service_name,
-                'datetime': apt.datetime.isoformat(),
+                'datetime': apt.appointment_datetime.isoformat(),
                 'status': apt.status,
                 'source': 'calendar' if hasattr(apt, 'calendar_id') and apt.calendar_id else 'bot'
             })
@@ -2419,3 +2420,44 @@ def cancel_mock_appointment(appointment_id):
     except Exception as e:
         print(f"Error cancelling mock appointment: {str(e)}")
         return jsonify({'error': 'Failed to cancel appointment'}), 500
+    
+
+
+@bp.route('/conversations', methods=['POST', 'OPTIONS'])
+def store_conversation():
+    if request.method == 'OPTIONS':
+        # Handle CORS preflight request
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
+        
+    try:
+        data = request.get_json()
+        db = SessionLocal()
+        try:
+            # Create conversation record
+            conversation = ChatConversation(
+                session_id=str(uuid.uuid4()),  # Generate a unique session ID
+                spa_id=data.get('spa_id'),
+                client_name=data.get('client_name'),
+                client_email=data.get('client_email'),
+                messages=json.dumps(data.get('messages', [])),  # Convert messages to JSON string
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(conversation)
+            db.commit()
+            
+            return jsonify({
+                'id': conversation.id,
+                'message': 'Conversation stored successfully'
+            })
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        print(f"Error storing conversation: {str(e)}")
+        return jsonify({'error': str(e)}), 500

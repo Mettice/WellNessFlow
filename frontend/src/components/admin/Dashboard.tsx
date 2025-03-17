@@ -7,6 +7,7 @@ import Settings from './Settings';
 import CalendarIntegration from './CalendarIntegration';
 import WidgetGenerator from './WidgetGenerator';
 import StaffManagement from './StaffManagement';
+import { useNavigate } from 'react-router-dom';
 
 // Define types
 interface NavItem {
@@ -87,8 +88,15 @@ const Dashboard: React.FC = () => {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
     fetchBotMetrics();
     fetchDocuments();
     fetchDailyMetrics();
@@ -96,14 +104,18 @@ const Dashboard: React.FC = () => {
 
   const fetchBotMetrics = async () => {
     try {
-      const response = await axios.get('/api/admin/bot-metrics');
+      const response = await axios.get<BotMetrics>('/api/admin/bot-metrics');
       setBotMetrics(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching bot metrics:', error);
-      showToast({ 
-        title: 'Failed to load metrics',
-        type: 'error'
-      });
+      if (error.response?.status === 401) {
+        navigate('/login');
+      } else {
+        showToast({ 
+          title: 'Failed to load metrics',
+          type: 'error'
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -111,14 +123,18 @@ const Dashboard: React.FC = () => {
 
   const fetchDocuments = async () => {
     try {
-      const response = await axios.get('/api/documents');
+      const response = await axios.get<Document[]>('/api/documents');
       setDocuments(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching documents:', error);
-      showToast({ 
-        title: 'Failed to load documents',
-        type: 'error'
-      });
+      if (error.response?.status === 401) {
+        navigate('/login');
+      } else {
+        showToast({ 
+          title: 'Failed to load documents',
+          type: 'error'
+        });
+      }
     } finally {
       setLoadingDocs(false);
     }
@@ -127,17 +143,21 @@ const Dashboard: React.FC = () => {
   const fetchDailyMetrics = async () => {
     try {
       const [metricsRes, appointmentsRes] = await Promise.all([
-        axios.get('/api/admin/metrics/daily'),
-        axios.get('/api/admin/appointments/today')
+        axios.get<DailyMetrics>('/api/admin/metrics/daily'),
+        axios.get<any[]>('/api/admin/appointments/today')
       ]);
       setDailyMetrics(metricsRes.data);
       setAppointments(appointmentsRes.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching daily metrics:', error);
-      showToast({
-        title: 'Failed to load daily metrics',
-        type: 'error'
-      });
+      if (error.response?.status === 401) {
+        navigate('/login');
+      } else {
+        showToast({
+          title: 'Failed to load daily metrics',
+          type: 'error'
+        });
+      }
     }
   };
 
@@ -162,7 +182,7 @@ const Dashboard: React.FC = () => {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
-        onUploadProgress: (progressEvent) => {
+        onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
           if (!progressEvent.total) return;
           const progress = Math.min(
             90,
@@ -170,7 +190,7 @@ const Dashboard: React.FC = () => {
           );
           setUploadProgress(progress);
         },
-      });
+      } as any); // Type assertion needed for onUploadProgress
       
       setUploadProgress(95);
       

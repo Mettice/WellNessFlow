@@ -66,12 +66,28 @@ interface BrandSettings {
   secondary_color: string;
 }
 
+interface ChatResponse {
+  response?: string;
+  message?: string;
+  actions?: Action[];
+}
+
+interface LocationsResponse {
+  locations: Location[];
+}
+
+interface SlotsResponse {
+  slots: Slot[];
+}
+
 interface ChatWidgetProps {
   ratio?: '1:1' | '4:3' | '16:9';
   position?: 'left' | 'center' | 'right';
   style?: 'floating' | 'embedded';
   theme?: string;
 }
+
+const API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000' : 'https://wellnessflow-production.up.railway.app';
 
 const ChatWidget: React.FC<ChatWidgetProps> = ({
   ratio = '1:1',
@@ -123,7 +139,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     const initializeWidget = async () => {
       try {
         // Try to fetch spa-specific branding if spa_id is available
-        const brandingResponse = await axios.get('/api/public/branding', {
+        const brandingResponse = await axios.get<BrandSettings>(`${API_BASE_URL}/api/public/branding`, {
           params: { spa_id: user?.spa_id || 'default' }
         });
         
@@ -157,8 +173,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
   // Add conversation storage
   const storeConversation = async (messages: Message[]) => {
     try {
-      await axios.post('/api/conversations', {
-        spa_id: 'default',
+      await axios.post(`${API_BASE_URL}/api/conversations`, {
+        spa_id: user?.spa_id || 'default',
         messages: messages.map(m => ({
           content: m.content,
           isUser: m.isUser,
@@ -167,6 +183,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
       });
     } catch (error) {
       console.error('Error storing conversation:', error);
+      // Don't throw error to prevent disrupting chat flow
     }
   };
 
@@ -191,8 +208,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     setIsLoading(true);
 
     try {
-      const endpoint = '/api/public/chat';
-      const response = await axios.post(endpoint, {
+      const response = await axios.post<ChatResponse>(`${API_BASE_URL}/api/public/chat`, {
         message: userMessage.content,
         spa_id: user?.spa_id || 'default',
         conversation_history: messages.map(m => ({
@@ -317,7 +333,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   const fetchLocations = async () => {
     try {
-      const response = await axios.get('/api/locations');
+      const response = await axios.get<LocationsResponse>('/api/locations');
       setAvailableLocations(response.data.locations);
       setMessages(prev => [...prev, {
         id: Math.random().toString(36).substring(7),
@@ -351,7 +367,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     setBookingState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const response = await axios.get('/api/appointments/available', {
+      const response = await axios.get<SlotsResponse>('/api/appointments/available', {
         params: {
           date: value.toISOString(),
           service_id: bookingState.selectedService?.id,
@@ -754,4 +770,4 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-export default ChatWidget; 
+export default ChatWidget;

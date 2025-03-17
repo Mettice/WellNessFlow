@@ -1,6 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import axios from 'axios';
 
+
 interface User {
   id: string;
   email: string;
@@ -25,7 +26,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000' : 'https://wellnessflow-production.up.railway.app';
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -45,6 +46,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (token) {
           config.headers = config.headers || {};
           config.headers.Authorization = `Bearer ${token}`;
+          config.withCredentials = true;
         }
         return config;
       },
@@ -83,11 +85,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const login = async (email: string, password: string) => {
     try {
-      console.log('Making login request to:', `${API_BASE_URL}/api/auth/login`);
-      const response = await axios.post<AuthResponse>(`${API_BASE_URL}/api/auth/login`, {
-        email,
-        password,
-      });
+      const response = await axios.post<AuthResponse>(
+        `${API_BASE_URL}/api/auth/login`,
+        {
+          email,
+          password,
+        }
+      );
       
       const { access_token, user } = response.data;
       localStorage.setItem('token', access_token);
@@ -138,4 +142,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}; 
+};

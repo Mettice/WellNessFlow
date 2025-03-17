@@ -1,52 +1,69 @@
-/// <reference types="vite/client" />
-
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// Configure axios defaults
+const API_BASE_URL = '/api';  // Use relative path for development
 
-// Add default headers
+// Set default base URL and credentials
+axios.defaults.baseURL = API_BASE_URL;
+axios.defaults.withCredentials = true;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 
-// Add request interceptor
-axios.interceptors.request.use((config) => {
-  // Add spa-id header if available
-  const spaId = localStorage.getItem('spa-id');
-  if (spaId) {
+// Single request interceptor
+axios.interceptors.request.use(
+  (config) => {
+    // Initialize headers if undefined
     config.headers = config.headers || {};
-    config.headers['spa-id'] = spaId;
+    
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    // Add spa-id header if available
+    const spaId = localStorage.getItem('spa-id');
+    if (spaId) {
+      config.headers['spa-id'] = spaId;
+    }
+
+    // Log request details in development
+    if (import.meta.env.DEV) {
+      console.log('Request Config:', {
+        url: config.url,
+        method: config.method,
+        baseURL: config.baseURL,
+        headers: config.headers
+      });
+    }
+
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
+);
 
-  // Handle API URL construction
-  if (!config.url?.startsWith('http')) {
-    config.url = `${API_BASE_URL}${config.url}`;
-  }
-
-  console.log('Request Config:', {
-    url: config.url,
-    method: config.method,
-    baseURL: API_BASE_URL,
-    headers: config.headers,
-    env: import.meta.env.PROD ? 'production' : 'development'
-  });
-
-  return config;
-});
-
-// Add response interceptor for error handling
+// Single response interceptor
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    
     console.error('API Error:', {
       url: error.config?.url,
       method: error.config?.method,
       status: error.response?.status,
       data: error.response?.data,
-      headers: error.config?.headers,
-      env: import.meta.env.PROD ? 'production' : 'development'
+      headers: error.config?.headers
     });
     return Promise.reject(error);
   }
 );
+
+export default axios;
 
 export const api = {
   content: {
@@ -104,4 +121,4 @@ export const api = {
       }
     }
   }
-}; 
+};

@@ -17,17 +17,18 @@ from flask_cors import CORS
 def create_app(test_config=None):
     app = Flask(__name__)
     
-    # List of allowed origins
-    ALLOWED_ORIGINS = [
-        "https://wellnessflow-git-spacontent-dions-projects-0087c2a0.vercel.app",
-        "https://wellnessflow-gwpt4crh9-dions-projects-0087c2a0.vercel.app",
-        "https://wellnessflow.vercel.app",
-        "https://wellnessflow-dbirvo628-dions-projects-0087c2a0.vercel.app",
-        "https://wellnessflow-e5k8mppqc-dions-projects-0087c2a0.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:5174"
-    ]
+    # Configure CORS with proper settings
+    CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:5174", "http://127.0.0.1:5174"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "spa-id"],
+        "supports_credentials": True
+    }
+})
+    
+    # List of allowed origins for dynamic CORS
+    ALLOWED_ORIGINS = ["http://localhost:5174"]
 
     # Configure CORS with dynamic origin handling
     @app.after_request
@@ -36,12 +37,13 @@ def create_app(test_config=None):
         if origin:
             # Check if the origin is allowed or matches *.vercel.app
             is_vercel = origin.endswith('.vercel.app')
-            if origin in ALLOWED_ORIGINS or is_vercel:
-                response.headers.add('Access-Control-Allow-Origin', origin)
-                response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,spa-id')
-                response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-                response.headers.add('Access-Control-Allow-Credentials', 'true')
-                response.headers.add('Access-Control-Expose-Headers', 'Content-Type,Authorization')
+            is_localhost = origin.startswith('http://localhost:')
+            if origin in ALLOWED_ORIGINS or is_vercel or is_localhost:
+                response.headers['Access-Control-Allow-Origin'] = origin
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,spa-id'
+                response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+                response.headers['Access-Control-Allow-Credentials'] = 'true'
+                response.headers['Access-Control-Expose-Headers'] = 'Authorization'
         return response
 
     # Add debug route to list all registered routes
@@ -117,6 +119,14 @@ def create_app(test_config=None):
     with app.app_context():
         init_db()
 
+    # Add error handling middleware
+    @app.errorhandler(422)
+    def handle_validation_error(error):
+        return jsonify({
+            'error': 'Invalid request data',
+            'message': str(error.description)
+        }), 422
+
     # Register blueprints
     from api.routes import bp as api_bp
     app.register_blueprint(api_bp)
@@ -126,4 +136,4 @@ def create_app(test_config=None):
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    app.run(debug=True, host='0.0.0.0', port=5000)

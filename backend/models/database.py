@@ -83,6 +83,7 @@ class SpaService(Base):
     __tablename__ = "services"
 
     id = Column(Integer, primary_key=True, index=True)
+    spa_id = Column(String, ForeignKey("clients.spa_id"))
     name = Column(String, index=True)
     duration = Column(Float)
     price = Column(Float)
@@ -129,7 +130,7 @@ class Appointment(Base):
     client_phone = Column(String)
     service_id = Column(Integer, ForeignKey("services.id"))
     location_id = Column(Integer, ForeignKey("locations.id"))
-    datetime = Column(DateTime, index=True)
+    appointment_datetime = Column(DateTime, index=True)
     status = Column(String)  # confirmed, cancelled, completed
     reminder_sent = Column(Boolean, default=False)
     feedback_sent = Column(Boolean, default=False)
@@ -234,3 +235,16 @@ class PlatformMetrics(Base):
     metrics_date = Column(Date, unique=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ChatConversation(Base):
+    __tablename__ = "chat_conversations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, index=True, nullable=False)
+    spa_id = Column(String, ForeignKey("clients.spa_id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    client_email = Column(String)
+    client_name = Column(String)
+    messages = Column(String)  # For JSON storage
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)

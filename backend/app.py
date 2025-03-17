@@ -25,7 +25,8 @@ def create_app(test_config=None):
         "https://wellnessflow-dbirvo628-dions-projects-0087c2a0.vercel.app",
         "https://wellnessflow-e5k8mppqc-dions-projects-0087c2a0.vercel.app",
         "http://localhost:3000",
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "http://localhost:5174"
     ]
 
     # Configure CORS with dynamic origin handling

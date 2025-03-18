@@ -25,6 +25,7 @@ from functools import wraps
 import traceback
 from flask import Blueprint, request, jsonify, make_response
 from models.database import ChatConversation
+import logging
 
 
 bp = Blueprint('api', __name__, url_prefix='/api')
@@ -1722,29 +1723,73 @@ def get_public_branding():
 
 @bp.route('/public/chat', methods=['POST'])
 def public_chat():
-    """Public endpoint for chat - no authentication required"""
     try:
         data = request.json
-        message = data.get('message')
-        conversation_history = data.get('conversation_history', [])
+        if not data or 'message' not in data:
+            return jsonify({
+                'error': 'No message provided',
+                'message': 'Please provide a message to chat with the assistant.'
+            }), 400
 
-        if not message:
-            return jsonify({'error': 'Message is required'}), 400
+        # Get spa_id from request or use default
+        spa_id = data.get('spa_id')
+        if not spa_id:
+            return jsonify({
+                'error': 'No spa_id provided',
+                'message': 'Please provide a spa_id to identify your business.'
+            }), 400
 
-        # Generate response using OpenAI
-        response = generate_response(
-            message=message,
-            conversation_history=conversation_history
-        )
+        # Verify spa exists
+        db = SessionLocal()
+        try:
+            spa = db.query(Client).filter_by(spa_id=spa_id).first()
+            if not spa:
+                return jsonify({
+                    'error': 'Invalid spa_id',
+                    'message': 'The provided spa_id is not valid.'
+                }), 404
 
-        return jsonify({
-            'response': response,
-            'intent': 'booking' if any(word in message.lower() for word in ['book', 'appointment', 'schedule']) else 'general'
-        })
+            # Check if OpenAI is configured
+            if not os.getenv('OPENAI_API_KEY'):
+                return jsonify({
+                    'error': 'OpenAI not configured',
+                    'message': 'The chat service is currently unavailable. Please try again later.'
+                }), 503
+
+            response_data = generate_response(
+                message=data['message'],
+                spa_id=spa_id,
+                conversation_history=data.get('conversation_history', [])
+            )
+            
+            if response_data.get('status') == 'error':
+                return jsonify({
+                    'error': response_data.get('error_type', 'unknown'),
+                    'message': response_data['response']
+                }), 500
+
+            return jsonify({
+                'message': response_data['response'],
+                'status': 'success'
+            })
+
+        except Exception as e:
+            logger.error(f"Chat error: {str(e)}")
+            logger.error(traceback.format_exc())
+            return jsonify({
+                'error': 'Internal server error',
+                'message': 'I apologize, but I encountered an error while processing your request. Please try again.'
+            }), 500
+        finally:
+            db.close()
 
     except Exception as e:
-        print(f"Error in public chat: {str(e)}")
-        return jsonify({'error': 'Failed to process chat message'}), 500
+        logger.error(f"Chat endpoint error: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'error': 'Server error',
+            'message': 'I apologize, but the chat service is experiencing technical difficulties. Please try again later.'
+        }), 500
 
 @bp.route('/admin/business-profile', methods=['GET'])
 @jwt_required()

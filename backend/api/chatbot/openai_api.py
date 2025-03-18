@@ -166,7 +166,7 @@ def detect_intent(message: str) -> str:
     )
     return response.choices[0].message.content.strip()
 
-def generate_response(message: str, conversation_history: Optional[list] = None) -> str:
+def generate_response(message: str, spa_id: str = None, conversation_history: Optional[list] = None) -> dict:
     """Generate a response using OpenAI's API"""
     try:
         # Format conversation history
@@ -202,11 +202,33 @@ def generate_response(message: str, conversation_history: Optional[list] = None)
             max_tokens=150
         )
 
-        return completion.choices[0].message.content
+        return {
+            "response": completion.choices[0].message.content,
+            "status": "success"
+        }
 
+    except openai.RateLimitError:
+        print("OpenAI rate limit exceeded")
+        return {
+            "response": "I'm currently experiencing high traffic. Please try again in a moment.",
+            "status": "error",
+            "error_type": "rate_limit"
+        }
+    except openai.APIError as e:
+        print(f"OpenAI API error: {str(e)}")
+        return {
+            "response": "I'm having trouble connecting to my services. Please try again shortly.",
+            "status": "error",
+            "error_type": "api_error"
+        }
     except Exception as e:
         print(f"Error generating response: {str(e)}")
-        return "I apologize, but I'm having trouble processing your request right now. Could you please try again?"
+        print(traceback.format_exc())
+        return {
+            "response": "I encountered an unexpected error. Please try again.",
+            "status": "error",
+            "error_type": "unknown"
+        }
 
 def extract_service_id(message: str, conversation_history: list) -> Optional[int]:
     """Extract service ID from conversation context"""

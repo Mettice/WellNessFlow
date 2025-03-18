@@ -119,10 +119,18 @@ def create_app(test_config=None):
     openai_api_key = os.getenv('OPENAI_API_KEY')
     if not openai_api_key:
         logger.warning("OpenAI API key not found in environment")
+        logger.warning("Chat functionality will be limited")
     else:
-        logger.info("OpenAI API key configured")
-        import openai
-        openai.api_key = openai_api_key
+        try:
+            logger.info("Configuring OpenAI...")
+            import openai
+            openai.api_key = openai_api_key
+            # Test OpenAI configuration
+            openai.Model.list()
+            logger.info("OpenAI configuration successful")
+        except Exception as e:
+            logger.error(f"OpenAI configuration failed: {str(e)}")
+            logger.error(traceback.format_exc())
     
     # Basic app configuration
     jwt_secret = os.getenv('JWT_SECRET_KEY', 'dev-jwt-secret')

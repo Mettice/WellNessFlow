@@ -3,9 +3,9 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "gunicorn --bind 0.0.0.0:$PORT --workers 1 --log-level debug --access-logfile - --error-logfile - --capture-output --timeout 120 app:app"
+startCommand = "python app.py"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
@@ -14,3 +14,4 @@ FLASK_APP = "app.py"
 FLASK_ENV = "production"
 FLASK_DEBUG = "1"
 PYTHONUNBUFFERED = "1"
+PORT = "5000"

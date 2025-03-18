@@ -4,11 +4,15 @@ import logging
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import traceback
 
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(message)s'
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -18,10 +22,17 @@ load_dotenv(override=True)
 # Add the current directory to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from models.database import init_db, engine
-from flask_jwt_extended import JWTManager
-from sqlalchemy import text
-from cors_test import cors_bp
+try:
+    from models.database import init_db, engine
+    from flask_jwt_extended import JWTManager
+    from sqlalchemy import text
+    from cors_test import cors_bp
+    from api import api_bp
+    logger.info("All modules imported successfully")
+except Exception as e:
+    logger.error(f"Error importing modules: {str(e)}")
+    logger.error(traceback.format_exc())
+    raise
 
 def test_db_connection():
     try:
@@ -31,10 +42,15 @@ def test_db_connection():
             return True
     except Exception as e:
         logger.error(f"Database connection failed: {str(e)}")
+        logger.error(traceback.format_exc())
         return False
 
 def create_app(test_config=None):
     logger.info("Starting application creation...")
+    logger.info(f"Current working directory: {os.getcwd()}")
+    logger.info(f"Python path: {sys.path}")
+    logger.info(f"Environment variables: {dict(os.environ)}")
+    
     app = Flask(__name__)
 
     # Configure CORS
@@ -74,13 +90,20 @@ def create_app(test_config=None):
                 "environment": os.getenv('FLASK_ENV', 'unknown'),
                 "port": os.getenv('PORT', 'default'),
                 "debug": app.debug,
+                "cwd": os.getcwd(),
+                "python_path": sys.path,
                 "request_headers": dict(request.headers)
             }
             logger.info(f"Health check response: {response}")
             return jsonify(response)
         except Exception as e:
             logger.error(f"Health check error: {str(e)}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            logger.error(traceback.format_exc())
+            return jsonify({
+                "status": "error",
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }), 500
 
     # Add root route for API verification
     @app.route('/')
@@ -88,7 +111,8 @@ def create_app(test_config=None):
         return jsonify({
             "status": "success",
             "message": "WellnessFlow API is running",
-            "environment": os.getenv('FLASK_ENV', 'unknown')
+            "environment": os.getenv('FLASK_ENV', 'unknown'),
+            "debug": app.debug
         })
 
     # Get OpenAI API key but don't fail if not available
@@ -135,17 +159,17 @@ def create_app(test_config=None):
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Database initialization failed: {str(e)}")
+        logger.error(traceback.format_exc())
 
     # Register blueprints
     try:
-        from api import api_bp
         app.register_blueprint(api_bp)
         app.register_blueprint(cors_bp)
         logger.info("All blueprints registered successfully")
         logger.info(f"Available routes: {[str(rule) for rule in app.url_map.iter_rules()]}")
     except Exception as e:
         logger.error(f"Failed to register blueprints: {str(e)}")
-        logger.error("Error details:", exc_info=True)
+        logger.error(traceback.format_exc())
 
     logger.info("Application creation completed")
     return app

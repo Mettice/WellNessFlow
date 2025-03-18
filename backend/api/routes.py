@@ -27,6 +27,13 @@ from flask import Blueprint, request, jsonify, make_response
 from models.database import ChatConversation
 import logging
 
+# Configure logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 

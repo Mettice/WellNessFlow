@@ -169,66 +169,32 @@ def detect_intent(message: str) -> str:
 def generate_response(message: str, spa_id: str = None, conversation_history: Optional[list] = None) -> dict:
     """Generate a response using OpenAI's API"""
     try:
-        # Format conversation history
-        messages = []
-        
-        # Add system message
-        messages.append({
-            "role": "system",
-            "content": """You are a friendly and knowledgeable spa assistant. You help customers learn about spa services 
-            and book appointments. Be concise, professional, and helpful. If someone wants to book, ask about their 
-            preferred service and time."""
-        })
+        if not os.getenv('OPENAI_API_KEY'):
+            print("OpenAI API key not configured")
+            return {
+                "response": "The chat service is currently unavailable. Please try again later.",
+                "status": "error",
+                "error_type": "configuration"
+            }
 
-        # Add conversation history
+        messages = [{"role": "system", "content": "You are a friendly spa assistant. Help customers learn about services and book appointments."}]
         if conversation_history:
-            for msg in conversation_history:
-                messages.append({
-                    "role": msg.get('role', 'user'),
-                    "content": msg.get('content', '')
-                })
+            messages.extend([{"role": msg.get('role', 'user'), "content": msg.get('content', '')} for msg in conversation_history])
+        messages.append({"role": "user", "content": message})
 
-        # Add the current message
-        messages.append({
-            "role": "user",
-            "content": message
-        })
+        completion = client.chat.completions.create(model="gpt-4", messages=messages, temperature=0.7, max_tokens=150)
+        return {"response": completion.choices[0].message.content, "status": "success"}
 
-        # Get completion from OpenAI using the client instance
-        completion = client.chat.completions.create(
-            model="gpt-4",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=150
-        )
-
-        return {
-            "response": completion.choices[0].message.content,
-            "status": "success"
-        }
-
-    except openai.RateLimitError:
-        print("OpenAI rate limit exceeded")
-        return {
-            "response": "I'm currently experiencing high traffic. Please try again in a moment.",
-            "status": "error",
-            "error_type": "rate_limit"
-        }
+    except openai.RateLimitError as e:
+        print(f"OpenAI rate limit exceeded: {str(e)}")
+        return {"response": "I'm currently experiencing high traffic. Please try again in a moment.", "status": "error", "error_type": "rate_limit"}
     except openai.APIError as e:
         print(f"OpenAI API error: {str(e)}")
-        return {
-            "response": "I'm having trouble connecting to my services. Please try again shortly.",
-            "status": "error",
-            "error_type": "api_error"
-        }
+        return {"response": "I'm having trouble connecting to my services. Please try again shortly.", "status": "error", "error_type": "api_error"}
     except Exception as e:
-        print(f"Error generating response: {str(e)}")
+        print(f"Error in generate_response: {str(e)}")
         print(traceback.format_exc())
-        return {
-            "response": "I encountered an unexpected error. Please try again.",
-            "status": "error",
-            "error_type": "unknown"
-        }
+        return {"response": "I encountered an unexpected error. Please try again.", "status": "error", "error_type": "unknown"}
 
 def extract_service_id(message: str, conversation_history: list) -> Optional[int]:
     """Extract service ID from conversation context"""

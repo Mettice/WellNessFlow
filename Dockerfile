@@ -2,16 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install minimal dependencies
 RUN apt-get update && \
-    apt-get install -y build-essential && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy backend directory
+# Copy requirements first for better caching
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
 COPY backend/ .
-
-# Install Python dependencies
-RUN pip install -r requirements.txt
 
 # Create instance directory
 RUN mkdir -p instance && chmod 777 instance
@@ -19,10 +22,10 @@ RUN mkdir -p instance && chmod 777 instance
 # Set environment variables
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
+ENV PYTHONUNBUFFERED=1
 
-# Expose default port
+# Expose port (Railway will set the PORT env var)
 EXPOSE 5000
 
-# Run the application with dynamic port binding
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["gunicorn --bind 0.0.0.0:${PORT:-5000} app:app"] 
+# Start with gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "120", "--log-level", "debug", "--access-logfile", "-", "--error-logfile", "-", "--capture-output", "--enable-stdio-inheritance", "app:app"]

@@ -1,11 +1,15 @@
 import os
 import sys
+import logging
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
-import logging
+from flask_cors import CORS
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Load environment variables first
@@ -14,11 +18,10 @@ load_dotenv(override=True)
 # Add the current directory to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask
 from models.database import init_db, engine
 from flask_jwt_extended import JWTManager
-from flask_cors import CORS
 from sqlalchemy import text
+from cors_test import cors_bp
 
 def test_db_connection():
     try:
@@ -33,45 +36,51 @@ def test_db_connection():
 def create_app(test_config=None):
     logger.info("Starting application creation...")
     app = Flask(__name__)
-    
-    # Configure CORS - More permissive for debugging
-    CORS(app, 
-         supports_credentials=True,
-         resources={r"/*": {"origins": "*"}})
+
+    # Configure CORS
+    CORS(app, resources={
+        r"/*": {
+            "origins": "*",
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Origin", "Content-Type", "Accept", "Authorization", "X-Request-With", "spa-id"],
+            "expose_headers": ["Authorization"],
+            "supports_credentials": True
+        }
+    })
 
     logger.info("CORS configured")
 
-    # Debug CORS requests
+    # Debug request logging
     @app.before_request
-    def debug_request():
-        logger.info(f"\nIncoming request: {request.method} {request.url}")
+    def log_request():
+        logger.info(f"Request: {request.method} {request.url}")
         logger.info(f"Headers: {dict(request.headers)}")
+        logger.info(f"Body: {request.get_data()}")
 
-    # Add CORS headers to all responses
     @app.after_request
-    def after_request(response):
-        origin = request.headers.get('Origin', '*')
-        
-        # Debug response
-        logger.info(f"\nOutgoing response: {response.status}")
-        
-        # Set CORS headers
-        response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-Request-With, spa-id'
-        
+    def log_response(response):
+        logger.info(f"Response Status: {response.status}")
+        logger.info(f"Response Headers: {dict(response.headers)}")
         return response
 
     # Health check endpoint
     @app.route('/health')
     def health_check():
-        db_status = test_db_connection()
-        return jsonify({
-            "status": "healthy" if db_status else "unhealthy",
-            "database": "connected" if db_status else "disconnected",
-            "environment": os.getenv('FLASK_ENV', 'unknown')
-        })
+        try:
+            db_status = test_db_connection()
+            response = {
+                "status": "healthy" if db_status else "unhealthy",
+                "database": "connected" if db_status else "disconnected",
+                "environment": os.getenv('FLASK_ENV', 'unknown'),
+                "port": os.getenv('PORT', 'default'),
+                "debug": app.debug,
+                "request_headers": dict(request.headers)
+            }
+            logger.info(f"Health check response: {response}")
+            return jsonify(response)
+        except Exception as e:
+            logger.error(f"Health check error: {str(e)}")
+            return jsonify({"status": "error", "message": str(e)}), 500
 
     # Add root route for API verification
     @app.route('/')
@@ -122,19 +131,21 @@ def create_app(test_config=None):
     try:
         with app.app_context():
             init_db()
-            test_db_connection()  # Test connection after initialization
+            test_db_connection()
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Database initialization failed: {str(e)}")
-        # Don't fail startup, let health check endpoint report the issue
 
     # Register blueprints
     try:
-        from api.routes import bp as api_bp
+        from api import api_bp
         app.register_blueprint(api_bp)
-        logger.info("API routes registered")
+        app.register_blueprint(cors_bp)
+        logger.info("All blueprints registered successfully")
+        logger.info(f"Available routes: {[str(rule) for rule in app.url_map.iter_rules()]}")
     except Exception as e:
         logger.error(f"Failed to register blueprints: {str(e)}")
+        logger.error("Error details:", exc_info=True)
 
     logger.info("Application creation completed")
     return app
@@ -143,4 +154,5 @@ app = create_app()
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    logger.info(f"Starting app on port {port}")
+    app.run(host='0.0.0.0', port=port)

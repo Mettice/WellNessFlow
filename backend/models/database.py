@@ -1,12 +1,45 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, ForeignKey, Boolean, Text, Date
+from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, ForeignKey, Boolean, Text, Date, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+def test_db_connection():
+    """Test database connection and log the results"""
+    try:
+        logger.info("Testing database connection...")
+        
+        # Get the DATABASE_URL
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            raise ValueError("No DATABASE_URL found in environment variables")
+
+        # Convert postgres:// to postgresql:// if necessary
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+        # Log the database URL (without credentials)
+        masked_url = database_url.split('@')[-1] if '@' in database_url else database_url
+        logger.info(f"Using database URL: {masked_url}")
+
+        # Create a test connection
+        test_engine = create_engine(database_url)
+        with test_engine.connect() as conn:
+            result = conn.execute(text("SELECT 1"))
+            logger.info("Database connection successful!")
+            return True
+    except Exception as e:
+        logger.error(f"Database connection failed: {str(e)}")
+        return False
 
 # Get the DATABASE_URL from environment variables
 DATABASE_URL = os.getenv('DATABASE_URL')

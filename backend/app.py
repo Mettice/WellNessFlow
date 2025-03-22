@@ -7,7 +7,6 @@ from flask_cors import CORS
 import traceback
 from flask_jwt_extended import JWTManager
 from werkzeug.middleware.proxy_fix import ProxyFix
-from werkzeug.urls import url_parse
 
 # Configure logging
 logging.basicConfig(

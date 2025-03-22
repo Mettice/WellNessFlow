@@ -25,8 +25,8 @@ ENV FLASK_ENV=production
 ENV FLASK_DEBUG=0
 ENV PYTHONUNBUFFERED=1
 
-# Expose port (this is just documentation, use Railway's PORT)
+# Expose default port (this is just documentation)
 EXPOSE 8080
 
-# Start Flask using gunicorn for production
-CMD gunicorn --bind 0.0.0.0:$PORT app:app
+# Start Flask
+CMD ["python", "app.py"]

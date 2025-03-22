@@ -3,13 +3,12 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "gunicorn --bind 0.0.0.0:$PORT app:app"
+startCommand = "python app.py"
 healthcheckPath = "/health"
 healthcheckTimeout = 60
 
 [env]
 FLASK_APP = "app.py"
 FLASK_ENV = "production"
-FLASK_DEBUG = "1"
+FLASK_DEBUG = "0"
 PYTHONUNBUFFERED = "1"
-PORT = "5000"

@@ -22,12 +22,11 @@ RUN mkdir -p instance && chmod 777 instance
 # Set environment variables
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
-ENV FLASK_DEBUG=1
+ENV FLASK_DEBUG=0
 ENV PYTHONUNBUFFERED=1
-ENV PORT=5000
 
-# Expose port
-EXPOSE 5000
+# Expose port (this is just documentation, use Railway's PORT)
+EXPOSE 8080
 
-# Start Flask development server
-CMD ["python", "app.py"]
+# Start Flask using gunicorn for production
+CMD gunicorn --bind 0.0.0.0:$PORT app:app

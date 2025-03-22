@@ -203,6 +203,14 @@ def create_app(test_config=None):
 app = create_app()
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
-    logger.info(f"Starting app on port {port}")
-    app.run(host='0.0.0.0', port=port)
+    # Get port from environment variable or default to 5000
+    try:
+        port = int(os.environ.get('PORT', 5000))
+        logger.info(f"Starting app on port {port}")
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except ValueError as e:
+        logger.error(f"Invalid PORT value: {os.environ.get('PORT')}")
+        # Fallback to default port
+        port = 5000
+        logger.info(f"Falling back to default port {port}")
+        app.run(host='0.0.0.0', port=port, debug=False)

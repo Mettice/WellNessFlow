@@ -24,6 +24,7 @@ ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV FLASK_DEBUG=0
 ENV PYTHONUNBUFFERED=1
+ENV WERKZEUG_PROXY_FIX=1
 
 # Expose default port (this is just documentation)
 EXPOSE 8080

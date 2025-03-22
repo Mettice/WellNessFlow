@@ -6,6 +6,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import traceback
 from flask_jwt_extended import JWTManager
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.urls import url_parse
 
 # Configure logging
 logging.basicConfig(
@@ -62,6 +64,31 @@ def create_app(test_config=None):
     logger.info(f"Environment variables: {dict(os.environ)}")
     
     app = Flask(__name__)
+
+    # Add ProxyFix middleware
+    app.wsgi_app = ProxyFix(app.wsgi_app)
+
+    # URL rewrite middleware
+    class URLRewriteMiddleware:
+        def __init__(self, app):
+            self.app = app
+
+        def __call__(self, environ, start_response):
+            path = environ.get('PATH_INFO', '')
+            
+            # Skip rewrite for health check and existing /api paths
+            if path == '/health' or path.startswith('/api/'):
+                return self.app(environ, start_response)
+
+            # Rewrite paths that should have /api prefix
+            if path.startswith('/admin/') or path.startswith('/public') or path == '/public_chat':
+                environ['PATH_INFO'] = f'/api{path}'
+                logger.info(f"Rewriting path from {path} to /api{path}")
+
+            return self.app(environ, start_response)
+
+    # Add URL rewrite middleware
+    app.wsgi_app = URLRewriteMiddleware(app.wsgi_app)
 
     # Configure CORS
     origins = [

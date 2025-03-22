@@ -3,16 +3,29 @@ import axios from 'axios';
 import { useAuth } from '../../hooks/useAuth';
 
 interface BrandSettings {
-  logo: string;
+  logo_url: string;
   primaryColor: string;
   secondaryColor: string;
   faqs: Array<{ question: string; answer: string }>;
   services: Array<{ name: string; description: string; duration: number; price: number }>;
 }
 
+interface ApiResponse {
+  logo_url: string;
+  primary_color: string;
+  secondary_color: string;
+  font_family: string;
+  faqs: Array<{ question: string; answer: string }>;
+  services: Array<{ name: string; description: string; duration: number; price: number }>;
+}
+
+interface LogoResponse {
+  logo_url: string;
+}
+
 const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
   const [settings, setSettings] = useState<BrandSettings>({
-    logo: '',
+    logo_url: '',
     primaryColor: '#5F9EAD',
     secondaryColor: '#4A7A8C',
     faqs: [],
@@ -20,7 +33,7 @@ const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
   });
   const [newFaq, setNewFaq] = useState({ question: '', answer: '' });
   const [newService, setNewService] = useState({ name: '', description: '', duration: 60, price: 0 });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -28,11 +41,24 @@ const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
   }, []);
 
   const fetchBrandSettings = async () => {
+    setIsLoading(true);
     try {
-      const response = await axios.get('/api/admin/brand-settings');
-      setSettings(response.data);
+      const response = await axios.get<ApiResponse>('/admin/brand-settings');  // Change any to ApiResponse
+
+      console.log('API Response:', response.data);
+
+      // Convert snake_case to camelCase
+      setSettings({
+        logo_url: response.data.logo_url || '',
+        primaryColor: response.data.primary_color || '#5F9EAD',
+        secondaryColor: response.data.secondary_color || '#4A7A8C',
+        faqs: response.data.faqs || [],
+        services: response.data.services || []
+      });
     } catch (error) {
       console.error('Error fetching brand settings:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -59,8 +85,8 @@ const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
     
     setIsLoading(true);
     try {
-      const response = await axios.post('/api/admin/upload-logo', formData);
-      setSettings(prev => ({ ...prev, logo: response.data.logo_url }));
+      const response = await axios.post<LogoResponse>('/admin/upload-logo', formData);
+      setSettings(prev => ({ ...prev, logo_url: response.data.logo_url }));
       alert('Logo uploaded successfully!');
     } catch (error) {
       console.error('Error uploading logo:', error);
@@ -72,7 +98,7 @@ const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
 
   const handleColorChange = async (color: string, type: 'primary' | 'secondary') => {
     try {
-      await axios.post('/api/admin/update-colors', {
+      await axios.post('/admin/update-colors', {
         [type === 'primary' ? 'primaryColor' : 'secondaryColor']: color
       });
       setSettings(prev => ({
@@ -88,7 +114,7 @@ const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
     if (!newFaq.question || !newFaq.answer) return;
     
     try {
-      await axios.post('/api/admin/add-faq', newFaq);
+      await axios.post('/admin/add-faq', newFaq);
       setSettings(prev => ({
         ...prev,
         faqs: [...prev.faqs, newFaq]
@@ -103,7 +129,7 @@ const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
     if (!newService.name || !newService.description) return;
     
     try {
-      await axios.post('/api/admin/add-service', newService);
+      await axios.post('/admin/add-service', newService);
       setSettings(prev => ({
         ...prev,
         services: [...prev.services, newService]
@@ -113,6 +139,10 @@ const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
       console.error('Error adding service:', error);
     }
   };
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <div className={`p-6 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-md`}>
@@ -126,15 +156,15 @@ const BrandSettings: React.FC<{ theme: string }> = ({ theme }) => {
           Logo
         </label>
         <div className="flex items-center space-x-4">
-          {settings.logo && (
+          {settings.logo_url && (
             <div className="relative">
               <img 
-                src={settings.logo} 
+                src={settings.logo_url} 
                 alt="Brand logo" 
                 className="h-12 w-12 object-contain rounded bg-white p-1" 
               />
               <button
-                onClick={() => setSettings(prev => ({ ...prev, logo: '' }))}
+                onClick={() => setSettings(prev => ({ ...prev, logo_url: '' }))}
                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
                 title="Remove logo"
               >

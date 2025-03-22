@@ -27,6 +27,18 @@ interface Plan {
   };
 }
 
+interface PlansResponse {
+  plans: Plan[];
+}
+
+interface SubscriptionResponse {
+  plan: string;
+}
+
+interface PaymentResponse {
+  client_secret: string;
+}
+
 const PaymentForm: React.FC<{ plan: Plan; onSuccess: () => void }> = ({ plan, onSuccess }) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -92,7 +104,7 @@ const SubscriptionManagement: React.FC = () => {
 
   const fetchPlans = async () => {
     try {
-      const response = await axios.get('/api/subscription/plans');
+      const response = await axios.get<PlansResponse>('/admin/subscription/plans');
       setPlans(response.data.plans);
     } catch (err: any) {
       setError('Failed to load subscription plans');
@@ -101,7 +113,7 @@ const SubscriptionManagement: React.FC = () => {
 
   const fetchCurrentSubscription = async () => {
     try {
-      const response = await axios.get('/api/subscription/current', {
+      const response = await axios.get<SubscriptionResponse>('/admin/subscription/current', {
         headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
       });
       setCurrentPlan(response.data.plan);
@@ -115,7 +127,7 @@ const SubscriptionManagement: React.FC = () => {
   const handlePlanSelect = async (plan: Plan) => {
     setSelectedPlan(plan);
     try {
-      const response = await axios.post('/api/subscription/create', {
+      const response = await axios.post<PaymentResponse>('/admin/subscription/create', {
         plan_id: plan.id,
         spa_id: localStorage.getItem('spa_id')
       }, {

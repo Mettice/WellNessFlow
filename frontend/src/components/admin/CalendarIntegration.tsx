@@ -18,6 +18,20 @@ interface CalendarConfig {
   };
 }
 
+interface CalendarSettingsResponse {
+  calendar_settings: {
+    calendar_type: string;
+    business_hours: CalendarConfig['business_hours'];
+    api_key?: string;
+    api_url?: string;
+  };
+}
+
+interface ValidationResponse {
+  valid: boolean;
+  error?: string;
+}
+
 const CALENDAR_TYPES = [
   {
     id: 'google_calendar',
@@ -81,6 +95,7 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
     const interceptor = axios.interceptors.request.use((config) => {
       const token = localStorage.getItem('access_token');
       if (token) {
+        config.headers = config.headers || {};
         config.headers.Authorization = `Bearer ${token}`;
       }
       return config;
@@ -98,7 +113,7 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
 
   const fetchCalendarConfig = async () => {
     try {
-      const response = await axios.get('/api/admin/settings');
+      const response = await axios.get<CalendarSettingsResponse>('/admin/settings');
       if (response.data?.calendar_settings) {
         const settings = response.data.calendar_settings;
         setSelectedCalendar(settings.calendar_type || '');
@@ -171,7 +186,7 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
     setIsConnecting(true);
     try {
       // First validate the calendar connection
-      const validateResponse = await axios.post('/api/admin/settings/validate-calendar', {
+      const validateResponse = await axios.post<ValidationResponse>('/admin/settings/validate-calendar', {
         calendar_type: selectedCalendar,
         calendar_settings: {
           business_hours: calendarConfig.business_hours,
@@ -185,7 +200,7 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
       }
 
       // If validation succeeds, update the settings
-      const response = await axios.put('/api/admin/settings/general', {
+      const response = await axios.put('/admin/settings/general', {
         calendar_type: selectedCalendar,
         calendar_settings: {
           business_hours: calendarConfig.business_hours,
@@ -222,7 +237,7 @@ const CalendarIntegration: React.FC<CalendarIntegrationProps> = ({ onSuccess, is
 
   const handleDisconnect = async () => {
     try {
-      const response = await axios.delete('/api/admin/settings/calendar');
+      const response = await axios.delete('/admin/settings/calendar');
       if (response.status === 200) {
         setSelectedCalendar('');
         setCalendarConfig({

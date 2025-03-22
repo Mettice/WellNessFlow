@@ -5,16 +5,27 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import traceback
+from flask_jwt_extended import JWTManager
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    level=logging.INFO,  # Change default level to INFO
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+# Set third-party loggers to WARNING to reduce noise
+logging.getLogger('openai').setLevel(logging.WARNING)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
+
+# Only enable debug logging if explicitly set
+if os.getenv('FLASK_DEBUG') == '1':
+    logger.setLevel(logging.DEBUG)
+    logging.getLogger('werkzeug').setLevel(logging.INFO)
 
 # Load environment variables first
 load_dotenv(override=True)
@@ -24,7 +35,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
     from models.database import init_db, engine
-    from flask_jwt_extended import JWTManager
     from sqlalchemy import text
     from cors_test import cors_bp
     from api import api_bp
@@ -54,9 +64,16 @@ def create_app(test_config=None):
     app = Flask(__name__)
 
     # Configure CORS
+    origins = [
+        "https://wellnessflow-git-spacontent-dions-projects-0087c2a0.vercel.app",
+        "http://localhost:5174",
+        "http://localhost:5173",
+     ]
+
+    # Configure CORS
     CORS(app, resources={
         r"/*": {
-            "origins": "*",
+            "origins": origins,
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Origin", "Content-Type", "Accept", "Authorization", "X-Request-With", "spa-id"],
             "expose_headers": ["Authorization"],
@@ -123,14 +140,15 @@ def create_app(test_config=None):
     else:
         try:
             logger.info("Configuring OpenAI...")
-            import openai
-            openai.api_key = openai_api_key
-            # Test OpenAI configuration
-            openai.Model.list()
-            logger.info("OpenAI configuration successful")
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_api_key)
+            # Test OpenAI configuration by listing models
+            models = client.models.list()
+            logger.info(f"OpenAI configuration successful - Found {len(models.data)} models")
         except Exception as e:
             logger.error(f"OpenAI configuration failed: {str(e)}")
-            logger.error(traceback.format_exc())
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            logger.warning("Chat functionality may be limited due to OpenAI configuration error")
     
     # Basic app configuration
     jwt_secret = os.getenv('JWT_SECRET_KEY', 'dev-jwt-secret')

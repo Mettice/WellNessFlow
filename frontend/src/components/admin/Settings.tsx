@@ -41,6 +41,13 @@ interface NotificationSettings {
   };
 }
 
+interface SettingsResponse {
+  general: GeneralSettings;
+  notifications: NotificationSettings;
+}
+
+interface BusinessProfileResponse extends BusinessProfile {}
+
 type TabType = 'business' | 'general' | 'notifications' | 'brand' | 'calendar' | 'chat';
 
 interface HistoryEntry {
@@ -132,14 +139,40 @@ const Settings: React.FC = () => {
     setIsLoading(true);
     try {
       const [settingsResponse, profileResponse] = await Promise.all([
-        axios.get('/api/admin/settings'),
-        axios.get('/api/admin/business-profile')
+        axios.get<SettingsResponse>('/admin/settings'),
+        axios.get<BusinessProfileResponse>('/admin/business-profile')
       ]);
       
-      const { general, notifications } = settingsResponse.data;
-      setGeneralSettings(general);
-      setNotificationSettings(notifications);
-      setBusinessProfile(profileResponse.data);
+      const defaultNotifications: NotificationSettings = {
+        emailNotifications: {
+          newBookings: true,
+          cancellations: true,
+          reminders: true,
+          marketing: false
+        },
+        pushNotifications: {
+          newBookings: true,
+          cancellations: true,
+          reminders: false
+        },
+        reminderTiming: {
+          beforeAppointment: 24,
+          followupAfter: 48
+        }
+      };
+
+      if (settingsResponse.data) {
+        const { general = {}, notifications = defaultNotifications } = settingsResponse.data as SettingsResponse;
+        setGeneralSettings(prev => ({
+          ...prev,
+          ...(general as GeneralSettings)
+        }));
+        setNotificationSettings(notifications);
+      }
+
+      if (profileResponse.data) {
+        setBusinessProfile(profileResponse.data as BusinessProfileResponse);
+      }
     } catch (error) {
       console.error('Error fetching settings:', error);
       showToast({ 
@@ -220,7 +253,7 @@ const Settings: React.FC = () => {
 
   const confirmSave = async () => {
     try {
-      await axios.put('/api/admin/business-profile', businessProfile);
+      await axios.put('/admin/business-profile', businessProfile);
       setHasUnsavedChanges(false);
       setHistory([]);
       showToast({ 
@@ -250,7 +283,7 @@ const Settings: React.FC = () => {
 
   const confirmGeneralSettingsSave = async () => {
     try {
-      await axios.put('/api/admin/settings/general', generalSettings);
+      await axios.put('/admin/settings/general', generalSettings);
       setHasUnsavedChanges(false);
       setHistory([]);
       showToast({ 
@@ -302,7 +335,7 @@ const Settings: React.FC = () => {
 
   const confirmNotificationSettingsSave = async () => {
     try {
-      await axios.put('/api/admin/settings/notifications', notificationSettings);
+      await axios.put('/admin/settings/notifications', notificationSettings);
       setHasUnsavedChanges(false);
       setHistory([]);
       showToast({ 

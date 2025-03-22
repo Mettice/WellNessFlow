@@ -139,7 +139,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     const initializeWidget = async () => {
       try {
         // Try to fetch spa-specific branding if spa_id is available
-        const brandingResponse = await axios.get<BrandSettings>(`${API_BASE_URL}/api/public/branding`, {
+        const brandingResponse = await axios.get<BrandSettings>(`${API_BASE_URL}/admin/public/branding`, {
           params: { spa_id: user?.spa_id || 'default' }
         });
         
@@ -173,7 +173,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
   // Add conversation storage
   const storeConversation = async (messages: Message[]) => {
     try {
-      await axios.post(`${API_BASE_URL}/api/conversations`, {
+      await axios.post(`${API_BASE_URL}/admin/conversations`, {
         spa_id: user?.spa_id || 'default',
         messages: messages.map(m => ({
           content: m.content,
@@ -208,7 +208,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     setIsLoading(true);
 
     try {
-      const response = await axios.post<ChatResponse>(`${API_BASE_URL}/api/public/chat`, {
+      const response = await axios.post<ChatResponse>(`${API_BASE_URL}/public_chat`, {
         message: userMessage.content,
         spa_id: user?.spa_id || 'default',
         conversation_history: messages.map(m => ({
@@ -333,7 +333,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   const fetchLocations = async () => {
     try {
-      const response = await axios.get<LocationsResponse>('/api/locations');
+      const response = await axios.get<LocationsResponse>('/admin/locations');
       setAvailableLocations(response.data.locations);
       setMessages(prev => [...prev, {
         id: Math.random().toString(36).substring(7),
@@ -367,7 +367,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     setBookingState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const response = await axios.get<SlotsResponse>('/api/appointments/available', {
+      const response = await axios.get<SlotsResponse>('/admin/appointments/available', {
         params: {
           date: value.toISOString(),
           service_id: bookingState.selectedService?.id,
@@ -406,7 +406,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     setBookingState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const response = await axios.post('/api/appointments', {
+      const response = await axios.post('/admin/appointments', {
         service_id: bookingState.selectedService?.id,
         location_id: bookingState.selectedLocation?.id,
         datetime: `${selectedDate?.toISOString().split('T')[0]}T${bookingState.selectedSlot?.time}`,

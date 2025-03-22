@@ -1,14 +1,9 @@
 import axios from 'axios';
 
-// Configure axios defaults
-const API_BASE_URL = '/api';  // Use relative path for development
-
-// Set default base URL and credentials
-axios.defaults.baseURL = API_BASE_URL;
+// Configure axios for the environment
 axios.defaults.withCredentials = true;
-axios.defaults.headers.common['Content-Type'] = 'application/json';
 
-// Single request interceptor
+// Add request interceptor for authentication
 axios.interceptors.request.use(
   (config) => {
     // Initialize headers if undefined
@@ -25,14 +20,9 @@ axios.interceptors.request.use(
       config.headers['spa-id'] = spaId;
     }
 
-    // Log request details in development
-    if (import.meta.env.DEV) {
-      console.log('Request Config:', {
-        url: config.url,
-        method: config.method,
-        baseURL: config.baseURL,
-        headers: config.headers
-      });
+    // Set Content-Type header only if it's not FormData
+    if (!(config.data instanceof FormData)) {
+      config.headers['Content-Type'] = 'application/json';
     }
 
     return config;
@@ -42,10 +32,73 @@ axios.interceptors.request.use(
   }
 );
 
-// Single response interceptor
+// Add response interceptor for error handling
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Log the error details
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
+
+    // Handle 401 errors by redirecting to login
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    } 
+    // Handle 500 errors
+    else if (error.response?.status === 500) {
+      console.error('Server Error:', error.response?.data);
+    }
+    
+    return Promise.reject(error);
+  }
+);
+
+export default axios;
+axios.defaults.headers.common['Content-Type'] = 'application/json';
+
+// Add request interceptor
+axios.interceptors.request.use((config) => {
+  // Initialize headers if undefined
+  config.headers = config.headers || {};
+
+  // Add auth token if available
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  // Add spa-id header if available
+  const spaId = localStorage.getItem('spa-id');
+  if (spaId) {
+    config.headers['spa-id'] = spaId;
+  }
+
+  // Log request details in development
+  if (import.meta.env.DEV) {
+    console.log('Request Config:', {
+      url: config.url,
+      method: config.method,
+      baseURL: config.baseURL,
+      headers: config.headers,
+      env: 'development'
+    });
+  }
+
+  return config;
+});
+
+// Add response interceptor for error handling
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Handle 401 errors by redirecting to login
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -62,8 +115,6 @@ axios.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
-export default axios;
 
 export const api = {
   content: {

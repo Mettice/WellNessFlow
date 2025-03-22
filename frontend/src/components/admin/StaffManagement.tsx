@@ -12,6 +12,12 @@ interface StaffMember {
   created_at: string;
 }
 
+interface ApiResponse {
+  message: string;
+  user?: StaffMember;    // for single user operations
+  users?: StaffMember[]; // for fetching all staff
+}
+
 const StaffManagement: React.FC = () => {
   const { theme } = useTheme();
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -34,14 +40,16 @@ const StaffManagement: React.FC = () => {
 
   const fetchStaff = async () => {
     try {
-      const response = await axios.get('/api/admin/staff');
-      setStaff(response.data);
+      const response = await axios.get<ApiResponse>('/admin/staff');
+      // Set staff array from users property, fallback to empty array
+      setStaff(response.data.users || []);
     } catch (error) {
       console.error('Error fetching staff:', error);
       showToast({
         title: 'Failed to load staff members',
         type: 'error'
       });
+      setStaff([]); // Ensure staff is always an array
     } finally {
       setLoading(false);
     }
@@ -50,7 +58,8 @@ const StaffManagement: React.FC = () => {
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/admin/staff', formData);
+      const response = await axios.post<ApiResponse>('/admin/staff', formData);
+      if (!response.data.user) return;
       showToast({
         title: 'Staff member added successfully',
         type: 'success'
@@ -72,12 +81,13 @@ const StaffManagement: React.FC = () => {
     if (!selectedStaff) return;
 
     try {
-      const response = await axios.put(`/api/admin/staff/${selectedStaff.id}`, formData);
+      const response = await axios.put<ApiResponse>(`/admin/staff/${selectedStaff.id}`, formData);
+      if (!response.data.user) return;
       showToast({
         title: 'Staff member updated successfully',
         type: 'success'
       });
-      setStaff(staff.map(s => s.id === selectedStaff.id ? response.data.user : s));
+      setStaff(staff.map(s => s.id === selectedStaff.id ? response.data.user! : s));
       setShowEditModal(false);
       setSelectedStaff(null);
     } catch (error: any) {
@@ -93,7 +103,7 @@ const StaffManagement: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this staff member?')) return;
 
     try {
-      await axios.delete(`/api/admin/staff/${id}`);
+      await axios.delete(`/admin/staff/${id}`);
       showToast({
         title: 'Staff member deleted successfully',
         type: 'success'
@@ -261,7 +271,7 @@ const StaffManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'}`}>
-              {staff.map(member => (
+              {Array.isArray(staff) ? staff.map(member => (
                 <tr key={member.id}>
                   <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                     theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
@@ -304,7 +314,7 @@ const StaffManagement: React.FC = () => {
                     </button>
                   </td>
                 </tr>
-              ))}
+              )) : <p>Loading staff...</p>}
             </tbody>
           </table>
         </div>

@@ -28,6 +28,7 @@ const FileUpload: React.FC = () => {
       const response = await axios.post('/api/upload', formData, {
         headers: { 
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
         }
       });
 

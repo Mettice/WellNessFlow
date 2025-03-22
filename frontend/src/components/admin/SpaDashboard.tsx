@@ -18,6 +18,16 @@ interface Appointment {
   status: 'confirmed' | 'completed' | 'cancelled';
 }
 
+interface DailyMetricsResponse {
+  total_appointments: number;
+  completed_appointments: number;
+  upcoming_appointments: number;
+}
+
+interface AppointmentsResponse {
+  appointments: Appointment[];
+}
+
 export const SpaDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -36,15 +46,15 @@ export const SpaDashboard: React.FC = () => {
     try {
       console.log('Fetching dashboard data...');
       const [metricsRes, appointmentsRes] = await Promise.all([
-        axios.get('/api/admin/metrics/daily'),
-        axios.get('/api/admin/appointments/today')
+        axios.get<DailyMetricsResponse>('/admin/metrics/daily'),
+        axios.get<AppointmentsResponse>('/admin/appointments/today')
       ]);
 
       console.log('Metrics response:', metricsRes.data);
       console.log('Appointments response:', appointmentsRes.data);
 
       setMetrics(metricsRes.data);
-      setAppointments(appointmentsRes.data);
+      setAppointments(appointmentsRes.data.appointments);
       setError(null);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);

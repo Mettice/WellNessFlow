@@ -112,6 +112,11 @@ const formatPhone = (phone: string): string => {
   return phone;
 };
 
+interface OnboardingResponse {
+  access_token: string;
+  spa_id: string;
+}
+
 const OnboardingFlow: React.FC = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(-1); // Start at welcome screen
@@ -196,7 +201,7 @@ const OnboardingFlow: React.FC = () => {
     setError(null);
 
     try {
-      const response = await axios.post('/api/onboard/start', {
+      const response = await axios.post<OnboardingResponse>('/onboard/start', {
         ...basicInfo,
         locations
       });
@@ -204,7 +209,7 @@ const OnboardingFlow: React.FC = () => {
       localStorage.setItem('spa_id', response.data.spa_id);
 
       // Complete the basic info step
-      await axios.post('/api/onboarding/complete-step', {
+      await axios.post('/onboarding/complete-step', {
         step: 0 // Basic info is step 0
       }, {
         headers: { Authorization: `Bearer ${response.data.access_token}` }
@@ -225,7 +230,7 @@ const OnboardingFlow: React.FC = () => {
 
     try {
       // Setup services
-      await axios.post('/api/onboard/setup-services', {
+      await axios.post('/onboard/setup-services', {
         spa_id: localStorage.getItem('spa_id'),
         services
       }, {
@@ -233,7 +238,7 @@ const OnboardingFlow: React.FC = () => {
       });
 
       // Complete the services step
-      await axios.post('/api/onboarding/complete-step', {
+      await axios.post('/onboarding/complete-step', {
         step: 1 // Services is step 1
       }, {
         headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
@@ -254,7 +259,7 @@ const OnboardingFlow: React.FC = () => {
 
     try {
       // Setup calendar
-      await axios.post('/api/onboard/setup-calendar', {
+      await axios.post('/onboard/setup-calendar', {
         spa_id: localStorage.getItem('spa_id'),
         ...calendarSettings
       }, {
@@ -262,7 +267,7 @@ const OnboardingFlow: React.FC = () => {
       });
 
       // Complete the calendar step
-      await axios.post('/api/onboarding/complete-step', {
+      await axios.post('/onboarding/complete-step', {
         step: 2 // Calendar is step 2
       }, {
         headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }

@@ -46,6 +46,14 @@ interface DailyMetrics {
   upcoming_appointments: number;
 }
 
+interface Appointment {
+  id: string;
+  client_name: string;
+  service: string;
+  datetime: string;
+  status: string;
+}
+
 const defaultNavigation: NavItem[] = [
   { name: 'Overview', icon: () => <span>📊</span>, current: true },
   { name: 'Documents', icon: () => <span>📄</span>, current: false },
@@ -54,6 +62,23 @@ const defaultNavigation: NavItem[] = [
   { name: 'Widget', icon: () => <span>🔧</span>, current: false },
   { name: 'Settings', icon: () => <span>⚙️</span>, current: false },
 ];
+
+// Default state values
+const defaultBotMetrics: BotMetrics = {
+  totalConversations: 0,
+  successfulBookings: 0,
+  averageResponseTime: '0s',
+  conversionRate: 0,
+  popularServices: [],
+  peakHours: []
+};
+
+const defaultDailyMetrics: DailyMetrics = {
+  total_appointments: 0,
+  completed_appointments: 0,
+  revenue_today: 0,
+  upcoming_appointments: 0
+};
 
 const ErrorFallback: React.FC<{ error: Error; resetErrorBoundary: () => void }> = ({ error, resetErrorBoundary }) => (
   <div role="alert" className="p-4 bg-red-100 text-red-700 rounded-md">
@@ -66,26 +91,14 @@ const ErrorFallback: React.FC<{ error: Error; resetErrorBoundary: () => void }> 
 const Dashboard: React.FC = () => {
   const { theme } = useTheme();
   const [navigation, setNavigation] = useState(defaultNavigation);
-  const [botMetrics, setBotMetrics] = useState<BotMetrics>({
-    totalConversations: 0,
-    successfulBookings: 0,
-    averageResponseTime: '0s',
-    conversionRate: 0,
-    popularServices: [],
-    peakHours: []
-  });
-  const [dailyMetrics, setDailyMetrics] = useState<DailyMetrics>({
-    total_appointments: 0,
-    completed_appointments: 0,
-    revenue_today: 0,
-    upcoming_appointments: 0
-  });
+  const [botMetrics, setBotMetrics] = useState<BotMetrics>(defaultBotMetrics);
+  const [dailyMetrics, setDailyMetrics] = useState<DailyMetrics>(defaultDailyMetrics);
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [appointments, setAppointments] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -104,10 +117,11 @@ const Dashboard: React.FC = () => {
 
   const fetchBotMetrics = async () => {
     try {
-      const response = await axios.get<BotMetrics>('/api/admin/bot-metrics');
-      setBotMetrics(response.data);
+      const response = await axios.get<BotMetrics>('/admin/bot-metrics');
+      setBotMetrics(response.data || defaultBotMetrics);
     } catch (error: any) {
       console.error('Error fetching bot metrics:', error);
+      setBotMetrics(defaultBotMetrics);
       if (error.response?.status === 401) {
         navigate('/login');
       } else {
@@ -122,11 +136,13 @@ const Dashboard: React.FC = () => {
   };
 
   const fetchDocuments = async () => {
+    setLoadingDocs(true);
     try {
       const response = await axios.get<Document[]>('/api/documents');
-      setDocuments(response.data);
+      setDocuments(response.data || []);
     } catch (error: any) {
       console.error('Error fetching documents:', error);
+      setDocuments([]);
       if (error.response?.status === 401) {
         navigate('/login');
       } else {
@@ -143,13 +159,15 @@ const Dashboard: React.FC = () => {
   const fetchDailyMetrics = async () => {
     try {
       const [metricsRes, appointmentsRes] = await Promise.all([
-        axios.get<DailyMetrics>('/api/admin/metrics/daily'),
-        axios.get<any[]>('/api/admin/appointments/today')
+        axios.get<DailyMetrics>('/admin/metrics/daily'),
+        axios.get<Appointment[]>('/admin/appointments/today')
       ]);
-      setDailyMetrics(metricsRes.data);
-      setAppointments(appointmentsRes.data);
+      setDailyMetrics(metricsRes.data || defaultDailyMetrics);
+      setAppointments(Array.isArray(appointmentsRes.data) ? appointmentsRes.data : []);
     } catch (error: any) {
       console.error('Error fetching daily metrics:', error);
+      setDailyMetrics(defaultDailyMetrics);
+      setAppointments([]);
       if (error.response?.status === 401) {
         navigate('/login');
       } else {
@@ -177,10 +195,13 @@ const Dashboard: React.FC = () => {
     setUploading(true);
     setUploadProgress(0);
 
+    const token = localStorage.getItem('token');
+   
     try {
       await axios.post('/api/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${token}`,
         },
         onUploadProgress: (progressEvent: { loaded: number; total?: number }) => {
           if (!progressEvent.total) return;
@@ -190,7 +211,7 @@ const Dashboard: React.FC = () => {
           );
           setUploadProgress(progress);
         },
-      } as any); // Type assertion needed for onUploadProgress
+      } as any);
       
       setUploadProgress(95);
       
@@ -263,7 +284,7 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
             <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              {dailyMetrics.total_appointments}
+              {dailyMetrics?.total_appointments || 0}
             </h3>
             <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
               Total Appointments
@@ -271,7 +292,7 @@ const Dashboard: React.FC = () => {
           </div>
           <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
             <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              {dailyMetrics.completed_appointments}
+              {dailyMetrics?.completed_appointments || 0}
             </h3>
             <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
               Completed Today
@@ -279,7 +300,7 @@ const Dashboard: React.FC = () => {
           </div>
           <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
             <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              {formatCurrency(dailyMetrics.revenue_today)}
+              {formatCurrency(dailyMetrics?.revenue_today || 0)}
             </h3>
             <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
               Today's Revenue
@@ -287,7 +308,7 @@ const Dashboard: React.FC = () => {
           </div>
           <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
             <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              {dailyMetrics.upcoming_appointments}
+              {dailyMetrics?.upcoming_appointments || 0}
             </h3>
             <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
               Upcoming
@@ -303,12 +324,14 @@ const Dashboard: React.FC = () => {
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {loading ? (
-            <div className="col-span-3 text-center py-4">Loading metrics...</div>
+            <div className="col-span-3 text-center py-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
+            </div>
           ) : (
             <>
               <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
                 <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                  {botMetrics.totalConversations}
+                  {botMetrics?.totalConversations || 0}
                 </h3>
                 <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                   Total Conversations
@@ -316,7 +339,7 @@ const Dashboard: React.FC = () => {
               </div>
               <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
                 <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                  {botMetrics.successfulBookings}
+                  {botMetrics?.successfulBookings || 0}
                 </h3>
                 <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                   Successful Bookings
@@ -324,7 +347,7 @@ const Dashboard: React.FC = () => {
               </div>
               <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
                 <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                  {botMetrics.conversionRate}%
+                  {botMetrics?.conversionRate?.toFixed(1) || '0'}%
                 </h3>
                 <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                   Conversion Rate
@@ -332,7 +355,7 @@ const Dashboard: React.FC = () => {
               </div>
               <div className={`p-6 rounded-lg ${theme === 'dark' ? 'bg-dark-200' : 'bg-gray-50'}`}>
                 <h3 className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                  {botMetrics.averageResponseTime}
+                  {botMetrics?.averageResponseTime || '0s'}
                 </h3>
                 <p className={`mt-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                   Average Response Time
@@ -351,16 +374,22 @@ const Dashboard: React.FC = () => {
                 Popular Services
               </h3>
               <div className="space-y-3">
-                {botMetrics.popularServices.map((service, index) => (
-                  <div key={index} className="flex justify-between items-center">
-                    <span className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {service.service}
-                    </span>
-                    <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {service.count} bookings
-                    </span>
+                {botMetrics?.popularServices?.length > 0 ? (
+                  botMetrics.popularServices.map((service, index) => (
+                    <div key={`${service.service}-${index}`} className="flex justify-between items-center">
+                      <span className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {service.service}
+                      </span>
+                      <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {service.count} bookings
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className={`text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    No services data available
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
@@ -370,16 +399,22 @@ const Dashboard: React.FC = () => {
                 Peak Hours
               </h3>
               <div className="space-y-3">
-                {botMetrics.peakHours.map((hour, index) => (
-                  <div key={index} className="flex justify-between items-center">
-                    <span className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {`${hour.hour}:00 - ${hour.hour}:59`}
-                    </span>
-                    <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {hour.bookings} bookings
-                    </span>
+                {botMetrics?.peakHours?.length > 0 ? (
+                  botMetrics.peakHours.map((hour, index) => (
+                    <div key={`${hour.hour}-${index}`} className="flex justify-between items-center">
+                      <span className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {`${hour.hour}:00 - ${hour.hour}:59`}
+                      </span>
+                      <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {hour.bookings} bookings
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className={`text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    No peak hours data available
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>
@@ -391,7 +426,7 @@ const Dashboard: React.FC = () => {
         <h2 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
           Today's Appointments
         </h2>
-        {appointments.length === 0 ? (
+        {!Array.isArray(appointments) || appointments.length === 0 ? (
           <p className={`text-center py-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
             No appointments scheduled for today
           </p>
@@ -415,7 +450,7 @@ const Dashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'}`}>
-                {appointments.map((appointment) => (
+                {appointments.map((appointment: Appointment) => (
                   <tr key={appointment.id}>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm ${
                       theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
@@ -489,17 +524,19 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="space-y-4">
-            {loadingDocs ? (
+            {loadingDocs && (
               <div className="flex justify-center py-4">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-500" />
               </div>
-            ) : documents.length === 0 ? (
+            )}
+            {!loadingDocs && (!Array.isArray(documents) || documents.length === 0) && (
               <div className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                 <span className="text-4xl">📄</span>
                 <p className="text-sm mt-4">No documents uploaded yet.</p>
                 <p className="text-sm mt-2">Upload documents to enhance your chatbot's knowledge.</p>
               </div>
-            ) : (
+            )}
+            {!loadingDocs && Array.isArray(documents) && documents.length > 0 && (
               <div className="grid grid-cols-1 gap-4">
                 {documents.map((doc) => (
                   <div

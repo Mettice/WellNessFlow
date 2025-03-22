@@ -14,6 +14,10 @@ interface Appointment {
   notes?: string;
 }
 
+interface AppointmentResponse {
+  appointments: Appointment[];
+}
+
 const AppointmentList: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,7 +33,7 @@ const AppointmentList: React.FC = () => {
     setError(null);
 
     try {
-      const response = await axios.get('/api/admin/appointments', {
+      const response = await axios.get<AppointmentResponse>('/admin/appointments', {
         params: { filter }
       });
       setAppointments(response.data.appointments);
@@ -43,7 +47,7 @@ const AppointmentList: React.FC = () => {
 
   const handleStatusChange = async (appointmentId: number, newStatus: string) => {
     try {
-      await axios.patch(`/api/admin/appointments/${appointmentId}`, {
+      await axios.patch(`/admin/appointments/${appointmentId}`, {
         status: newStatus
       });
       

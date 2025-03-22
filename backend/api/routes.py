@@ -27,6 +27,7 @@ from flask import Blueprint, request, jsonify, make_response
 from models.database import ChatConversation
 import logging
 
+
 # Configure logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -229,38 +230,7 @@ def get_client(client_id):
         return jsonify({'error': str(e)}), 500
 
 # Existing routes with authentication added
-@bp.route('/chat', methods=['POST'])
-def chat():
-    # Public endpoint - no authentication required
-    try:
-        data = request.json
-        if not data or 'message' not in data:
-            return jsonify({'error': 'No message provided'}), 400
 
-        # Get spa_id from request or use default
-        spa_id = data.get('spa_id')
-        if not spa_id:
-            return jsonify({'error': 'No spa_id provided'}), 400
-
-        # Verify spa exists
-        db = SessionLocal()
-        try:
-            spa = db.query(Client).filter_by(spa_id=spa_id).first()
-            if not spa:
-                return jsonify({'error': 'Invalid spa_id'}), 404
-        finally:
-            db.close()
-
-        response_data = generate_response(
-            message=data['message'],
-            spa_id=spa_id,
-            conversation_history=data.get('conversation_history', [])
-        )
-        
-        return jsonify(response_data)
-    except Exception as e:
-        print(f"Error in chat endpoint: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
 @bp.route('/locations', methods=['GET'])
 def get_locations():
@@ -1728,75 +1698,51 @@ def get_public_branding():
             'secondary_color': '#A7B5A0'
         })
 
-@bp.route('/public/chat', methods=['POST'])
+@bp.route('/public_chat', methods=['POST'])
 def public_chat():
     try:
-        data = request.json
-        if not data or 'message' not in data:
-            return jsonify({
-                'error': 'No message provided',
-                'message': 'Please provide a message to chat with the assistant.'
-            }), 400
+        data = request.get_json()
+        if not data:
+            logger.error("No JSON data received in request")
+            return jsonify({"error": "No data provided"}), 400
 
-        # Get spa_id from request or use default
+        message = data.get('message')
         spa_id = data.get('spa_id')
-        if not spa_id:
+        
+        if not message or not spa_id:
+            logger.error(f"Missing required fields: message={bool(message)}, spa_id={bool(spa_id)}")
+            return jsonify({"error": "Message and spa_id are required"}), 400
+
+        # Check if OpenAI is configured
+        if not os.getenv('OPENAI_API_KEY'):
+            logger.error("OpenAI API key not configured")
             return jsonify({
-                'error': 'No spa_id provided',
-                'message': 'Please provide a spa_id to identify your business.'
-            }), 400
+                'error': 'OpenAI not configured',
+                'message': 'The chat service is currently unavailable. Please try again later.'
+            }), 503
 
-        # Verify spa exists
-        db = SessionLocal()
-        try:
-            spa = db.query(Client).filter_by(spa_id=spa_id).first()
-            if not spa:
-                return jsonify({
-                    'error': 'Invalid spa_id',
-                    'message': 'The provided spa_id is not valid.'
-                }), 404
-
-            # Check if OpenAI is configured
-            if not os.getenv('OPENAI_API_KEY'):
-                return jsonify({
-                    'error': 'OpenAI not configured',
-                    'message': 'The chat service is currently unavailable. Please try again later.'
-                }), 503
-
-            response_data = generate_response(
-                message=data['message'],
-                spa_id=spa_id,
-                conversation_history=data.get('conversation_history', [])
-            )
-            
-            if response_data.get('status') == 'error':
-                return jsonify({
-                    'error': response_data.get('error_type', 'unknown'),
-                    'message': response_data['response']
-                }), 500
-
+        response_data = generate_response(
+            message=message,
+            spa_id=spa_id,
+            conversation_history=data.get('conversation_history', [])
+        )
+                
+        if response_data.get('status') == 'error':
+            logger.error(f"Error generating response: {response_data.get('error_type')}")
             return jsonify({
-                'message': response_data['response'],
-                'status': 'success'
-            })
-
-        except Exception as e:
-            logger.error(f"Chat error: {str(e)}")
-            logger.error(traceback.format_exc())
-            return jsonify({
-                'error': 'Internal server error',
-                'message': 'I apologize, but I encountered an error while processing your request. Please try again.'
+                'error': response_data.get('error_type', 'unknown'),
+                'message': response_data['response']
             }), 500
-        finally:
-            db.close()
+
+        return jsonify({
+            'message': response_data['response'],
+            'status': 'success'
+        })
 
     except Exception as e:
-        logger.error(f"Chat endpoint error: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({
-            'error': 'Server error',
-            'message': 'I apologize, but the chat service is experiencing technical difficulties. Please try again later.'
-        }), 500
+        logger.error(f"Error generating chat response: {str(e)}")
+        logger.error(f"Stack trace: {traceback.format_exc()}")
+        return jsonify({"error": "Failed to generate response", "details": str(e)}), 500
 
 @bp.route('/admin/business-profile', methods=['GET'])
 @jwt_required()

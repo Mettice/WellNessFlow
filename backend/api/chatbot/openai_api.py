@@ -8,11 +8,18 @@ import numpy as np
 from ..rag.embeddings import generate_embeddings
 import traceback
 from ..services.upsell_service import UpsellService
-import openai
 from flask import current_app
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+if not os.getenv('OPENAI_API_KEY'):
+    logger.warning("OpenAI API key not found in environment")
+    logger.warning("Chat functionality will be limited")
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
     """Calculate cosine similarity between two vectors."""
@@ -152,49 +159,58 @@ def get_spa_context(spa_id: str = None) -> str:
 
 def detect_intent(message: str) -> str:
     """Detect user intent from message."""
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{
-            "role": "system",
-            "content": "Classify the user's intent into one of these categories: BOOKING, INFORMATION, PRICING, AVAILABILITY, OTHER"
-        }, {
-            "role": "user",
-            "content": message
-        }],
-        temperature=0,
-        max_tokens=50
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{
+                "role": "system",
+                "content": "Classify the user's intent into one of these categories: BOOKING, INFORMATION, PRICING, AVAILABILITY, OTHER"
+            }, {
+                "role": "user",
+                "content": message
+            }],
+            temperature=0,
+            max_tokens=50
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Error detecting intent: {str(e)}")
+        return "OTHER"
 
 def generate_response(message: str, spa_id: str = None, conversation_history: Optional[list] = None) -> dict:
     """Generate a response using OpenAI's API"""
     try:
         if not os.getenv('OPENAI_API_KEY'):
-            print("OpenAI API key not configured")
+            logger.error("OpenAI API key not configured")
             return {
                 "response": "The chat service is currently unavailable. Please try again later.",
                 "status": "error",
                 "error_type": "configuration"
             }
 
+        # Prepare messages
         messages = [{"role": "system", "content": "You are a friendly spa assistant. Help customers learn about services and book appointments."}]
         if conversation_history:
             messages.extend([{"role": msg.get('role', 'user'), "content": msg.get('content', '')} for msg in conversation_history])
         messages.append({"role": "user", "content": message})
 
-        completion = client.chat.completions.create(model="gpt-4", messages=messages, temperature=0.7, max_tokens=150)
+        # Make API call
+        completion = client.chat.completions.create(
+            model="gpt-4",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=150
+        )
         return {"response": completion.choices[0].message.content, "status": "success"}
 
-    except openai.RateLimitError as e:
-        print(f"OpenAI rate limit exceeded: {str(e)}")
-        return {"response": "I'm currently experiencing high traffic. Please try again in a moment.", "status": "error", "error_type": "rate_limit"}
-    except openai.APIError as e:
-        print(f"OpenAI API error: {str(e)}")
-        return {"response": "I'm having trouble connecting to my services. Please try again shortly.", "status": "error", "error_type": "api_error"}
     except Exception as e:
-        print(f"Error in generate_response: {str(e)}")
-        print(traceback.format_exc())
-        return {"response": "I encountered an unexpected error. Please try again.", "status": "error", "error_type": "unknown"}
+        logger.error(f"Error in generate_response: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            "response": "I encountered an unexpected error. Please try again.",
+            "status": "error",
+            "error_type": "unknown"
+        }
 
 def extract_service_id(message: str, conversation_history: list) -> Optional[int]:
     """Extract service ID from conversation context"""
@@ -202,23 +218,25 @@ def extract_service_id(message: str, conversation_history: list) -> Optional[int
         # Ask GPT to identify the selected service
         messages = [
             {"role": "system", "content": "Extract the service ID from the conversation. Return only the number."},
-            *conversation_history,
+            *[{"role": "user" if msg.get('isUser') else "assistant", "content": msg.get('content', '')} 
+              for msg in conversation_history],
             {"role": "user", "content": message}
         ]
         
         completion = client.chat.completions.create(
             model="gpt-4",
             messages=messages,
-            temperature=0,
+            temperature=0, 
             max_tokens=10
         )
         
         service_id = int(completion.choices[0].message.content.strip())
         return service_id
-    except:
+    except Exception as e:
+        logger.error(f"Error extracting service ID: {str(e)}")
         return None
 
-async def extract_service_type(message: str, conversation_history: list) -> Optional[str]:
+def extract_service_type(message: str, conversation_history: list) -> Optional[str]:
     """Extract the service type from the conversation context."""
     try:
         # Ask GPT to identify the service type
@@ -244,7 +262,7 @@ async def extract_service_type(message: str, conversation_history: list) -> Opti
             "content": message
         })
         
-        completion = await client.chat.completions.create(
+        completion = client.chat.completions.create(
             model="gpt-4",
             messages=messages,
             temperature=0,
@@ -253,22 +271,23 @@ async def extract_service_type(message: str, conversation_history: list) -> Opti
         
         service_type = completion.choices[0].message.content.strip().lower()
         return service_type if service_type != "none" else None
-    except:
-        return None 
+    except Exception as e:
+        logger.error(f"Error extracting service type: {str(e)}")
+        return None
 
-async def get_upsell_suggestions(spa_id: str, service_type: str, conversation_history: list) -> list:
+def get_upsell_suggestions(spa_id: str, service_type: str, conversation_history: list) -> list:
     """Get personalized upsell suggestions based on conversation context."""
     try:
         # Extract customer preferences from conversation
         upsell_service = UpsellService(spa_id)
         
         # Get upsell recommendations
-        recommendations = await upsell_service.get_personalized_upsell(
+        recommendations = upsell_service.get_personalized_upsell(
             service_type=service_type,
             customer_history=conversation_history
         )
         
         return recommendations
     except Exception as e:
-        print(f"Error getting upsell suggestions: {str(e)}")
+        logger.error(f"Error getting upsell suggestions: {str(e)}")
         return [] 

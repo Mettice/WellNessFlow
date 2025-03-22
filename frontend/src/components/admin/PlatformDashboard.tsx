@@ -42,7 +42,7 @@ export const PlatformDashboard: React.FC = () => {
 
   const fetchMetrics = async () => {
     try {
-      const response = await axios.get('/api/admin/platform/metrics');
+      const response = await axios.get<PlatformMetrics>(`/admin/platform/metrics`);
       setMetrics(response.data);
     } catch (err) {
       setError('Failed to load metrics');
@@ -52,8 +52,8 @@ export const PlatformDashboard: React.FC = () => {
 
   const fetchSpas = async () => {
     try {
-      const response = await axios.get('/api/admin/platform/spas');
-      setSpas(response.data);
+      const response = await axios.get<{spas: Spa[]}>('/admin/platform/spas');
+      setSpas(response.data.spas);
     } catch (err) {
       setError('Failed to load spas');
       console.error('Error fetching spas:', err);
@@ -64,7 +64,7 @@ export const PlatformDashboard: React.FC = () => {
 
   const fetchSpaDetails = async (spaId: string) => {
     try {
-      const response = await axios.get(`/api/admin/platform/spa/${spaId}`);
+      const response = await axios.get(`/admin/platform/spa/${spaId}`);
       setSpaDetails(response.data);
       setSelectedSpa(spaId);
     } catch (error) {
@@ -82,7 +82,7 @@ export const PlatformDashboard: React.FC = () => {
     }
 
     try {
-      await axios.post(`/api/admin/platform/spa/${spaId}/suspend`);
+      await axios.post(`/admin/platform/spa/${spaId}/suspend`);
       showToast({
         title: 'Success',
         description: 'Spa suspended successfully',

@@ -7,6 +7,10 @@ interface WidgetGeneratorProps {
   spaId: string;
 }
 
+interface WidgetResponse {
+  enabled: boolean;
+}
+
 const WidgetGenerator: React.FC<WidgetGeneratorProps> = ({ theme, spaId }) => {
   const [isEnabled, setIsEnabled] = useState(false);
   const [customization, setCustomization] = useState({
@@ -24,7 +28,7 @@ const WidgetGenerator: React.FC<WidgetGeneratorProps> = ({ theme, spaId }) => {
     // Fetch initial widget status
     const fetchWidgetStatus = async () => {
       try {
-        const response = await axios.get('/api/admin/widget/status');
+        const response = await axios.get<WidgetResponse>('/admin/widget/status');
         setIsEnabled(response.data.enabled);
       } catch (error) {
         console.error('Error fetching widget status:', error);
@@ -35,7 +39,7 @@ const WidgetGenerator: React.FC<WidgetGeneratorProps> = ({ theme, spaId }) => {
 
   const toggleWidget = async () => {
     try {
-      const response = await axios.post('/api/admin/widget/toggle', {
+      const response = await axios.post<WidgetResponse>('/admin/widget/toggle', {
         enabled: !isEnabled
       });
       setIsEnabled(response.data.enabled);
